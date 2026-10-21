@@ -1,0 +1,7 @@
+build_nuitka/
+installer_output/
+dist/
+build/
+__pycache__/
+*.pyc
+.venv*/

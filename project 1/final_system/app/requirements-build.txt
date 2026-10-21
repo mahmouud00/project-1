@@ -1,0 +1,6 @@
+pyinstaller>=6.16
+pyinstaller-hooks-contrib>=2025.1
+pillow>=10.0
+nuitka>=2.5
+ordered-set>=4.1
+zstandard>=0.22
