@@ -125,6 +125,7 @@ class GuiFlowTest(unittest.TestCase):
         self.assertTrue(self.pump(lambda: isinstance(self.screen(), MainPage)))
         main = self.screen()
         self.idle()
+        self.assertEqual(main._busy.text(), "")          # مؤشر التحميل بيختفى لما الشغل يخلص
         self.shot("04_dashboard")
         self.no_errors()
 

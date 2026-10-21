@@ -137,7 +137,8 @@ class MainPage(QWidget):
 
         if not self._pages:
             self._stack.addWidget(ui.label("مفيش صفحات متاحة لحسابك — كلّم المدير", "sectionTitle"))
-        self.worker.add_busy_listener(lambda busy: self._busy.setText("⏳ جارى التحميل…" if busy else ""))
+        self.worker.add_busy_listener(lambda busy: self._busy.setText("⏳ جارى التحميل…" if busy else ""),
+                                      owner=self)
         self.refresh_company_header()
         self.update_banner()
         if self._pages:
@@ -340,7 +341,7 @@ class AppController:
             qt_theme.apply_theme(self.qt, "system")
 
     def _set(self, widget):
-        self.worker.clear_busy_listeners()
+        self.worker.clear_busy_listeners(keep=widget)
         self.window.setCentralWidget(widget)
 
     def _waiting(self, text):

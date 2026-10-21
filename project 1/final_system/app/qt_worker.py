@@ -40,11 +40,15 @@ class QtWorker:
     def is_busy(self) -> bool:
         return self._pending > 0
 
-    def add_busy_listener(self, callback):
-        self._busy_listeners.append(callback)
+    def add_busy_listener(self, callback, owner=None):
+        """owner = الشاشة صاحبة المؤشر (بيتشال لما الشاشة تتغير)."""
+        self._busy_listeners.append((owner, callback))
+        callback(self._pending > 0)
 
-    def clear_busy_listeners(self):
-        self._busy_listeners.clear()
+    def clear_busy_listeners(self, keep=None):
+        """بيشيل مؤشرات الشاشات القديمة. keep = الشاشة الجديدة: مؤشرها بيفضل حتى لو اتسجل
+        قبل ما تتعرض (وإلا "جارى التحميل" كانت بتفضل ظاهرة على طول)."""
+        self._busy_listeners = [(o, c) for o, c in self._busy_listeners if keep is not None and o is keep]
 
     # ---------- داخلى ----------
 
@@ -80,7 +84,7 @@ class QtWorker:
                 self._on_unhandled_error(e)
 
     def _notify(self):
-        for callback in list(self._busy_listeners):
+        for _owner, callback in list(self._busy_listeners):
             try:
                 callback(self._pending > 0)
             except RuntimeError:
