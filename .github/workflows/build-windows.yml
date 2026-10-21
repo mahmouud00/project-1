@@ -53,7 +53,7 @@ jobs:
         if: matrix.compiler == 'nuitka'
         run: |
           python -m nuitka main.py --standalone --assume-yes-for-downloads --msvc=latest `
-            --enable-plugin=pyside6 --include-qt-plugins=sensible,printsupport `
+            --enable-plugin=pyside6 --include-qt-plugins=sensible `
             --windows-console-mode=disable --windows-icon-from-ico=assets\app.ico `
             --include-data-dir=assets=assets --include-package=server `
             --include-module=cryptography.hazmat.primitives.asymmetric.ed25519 `
