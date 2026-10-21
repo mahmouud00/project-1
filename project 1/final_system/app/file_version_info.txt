@@ -5,11 +5,11 @@ VSVersionInfo(
   kids=[
     StringFileInfo([StringTable('040904B0', [
       StringStruct('CompanyName', 'MYTECH Solutions'),
-      StringStruct('FileDescription', 'SUITES'),
+      StringStruct('FileDescription', 'SUITS'),
       StringStruct('FileVersion', '1.0.0'),
-      StringStruct('InternalName', 'SUITES'),
-      StringStruct('OriginalFilename', 'SUITES.exe'),
-      StringStruct('ProductName', 'SUITES'),
+      StringStruct('InternalName', 'SUITS'),
+      StringStruct('OriginalFilename', 'SUITS.exe'),
+      StringStruct('ProductName', 'SUITS'),
       StringStruct('ProductVersion', '1.0.0')])]),
     VarFileInfo([VarStruct('Translation', [1033, 1200])])
   ]

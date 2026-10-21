@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# وصفة PyInstaller (للـ build السريع build_quick.bat): بتحوّل البرنامج لفولدر فيه SUITES.exe
+# وصفة PyInstaller (للـ build السريع build_quick.bat): بتحوّل البرنامج لفولدر فيه SUITS.exe
 import os
 import sys
 from PyInstaller.utils.hooks import collect_all
@@ -37,7 +37,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='SUITES',
+    name='SUITS',
     debug=False,
     strip=False,
     upx=False,
@@ -45,4 +45,4 @@ exe = EXE(
     icon='assets/app.ico',
     version='file_version_info.txt',
 )
-coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name='SUITES')
+coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name='SUITS')

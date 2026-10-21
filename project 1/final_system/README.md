@@ -1,4 +1,4 @@
-# SUITES — نظام إدارة مصانع البدل (MYTECH Solutions)
+# SUITS — نظام إدارة مصانع البدل (MYTECH Solutions)
 
 برنامج ديسكتوب (ويندوز) **من غير إنترنت**: قاعدة البيانات على جهاز واحد فى المحل (السيرفر)،
 وباقى الأجهزة بتتصل بيه على شبكة المحل. بيتباع بترخيص لكل شركة: **شهر / 6 شهور / سنة / مدى الحياة**،
@@ -61,7 +61,7 @@ python app\main.py
 - اكتب بيانات الشركة وحساب المدير ← انت جوه.
 
 ### 3) أداة التراخيص (عندك إنت بس)
-دبل كليك على **`SUITES-License-Tool.exe`** (بيتبنى على GitHub مع الـ Setup — Artifacts ← SUITES_License_Tool).
+دبل كليك على **`SUITS-License-Tool.exe`** (بيتبنى على GitHub مع الـ Setup — Artifacts ← SUITS_License_Tool).
 أول مرة بتسألك على مكان `seller_private_key.pem` وبتفتكره، وسجل التراخيص بيتحفظ جنبه.
 (أو من بايثون: `python license_tool\license_tool.py`)
 - المفتاح السرى **مش** جوه الـ exe، فلو الـ exe اتسرب محدش يقدر يعمل بيه أكواد من غير الملف.
@@ -91,7 +91,7 @@ python -m unittest discover tests -v
    - بيحوّل الكود لـ exe متجمّع بـ **Nuitka** (أصعب بكتير فى فك الكود من PyInstaller). أول مرة بياخد 10–20 دقيقة
      وممكن ينزّل compiler لوحده.
    - لو Nuitka عمل مشكلة: `build_quick.bat` (PyInstaller، أسرع بس أسهل فى الفك).
-3. الـ Setup بيطلع فى `app\installer_output\SUITES_Setup_1.0.0.exe`.
+3. الـ Setup بيطلع فى `app\installer_output\SUITS_Setup_1.0.0.exe`.
 
 قبل ما تبيع:
 - اسم البرنامج واللوجو: `app\app_info.py` (`APP_NAME`) + `app\installer.iss` (`MyAppName`) + `app\assets\logo.png`

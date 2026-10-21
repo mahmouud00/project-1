@@ -9,8 +9,8 @@
 #ifndef SourceDir
   #define SourceDir "build_nuitka\main.dist"
 #endif
-#define MyAppName "SUITES"
-#define MyAppExeName "SUITES.exe"
+#define MyAppName "SUITS"
+#define MyAppExeName "SUITS.exe"
 
 [Setup]
 ; ⚠️ متغيّرش AppId أبدًا: هو اللى بيخلّى النسخة الجديدة تتثبت فوق القديمة
@@ -19,13 +19,13 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher=MYTECH Solutions
-DefaultDirName={autopf}\SUITES
+DefaultDirName={autopf}\SUITS
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 ; بيتثبت للمستخدم الحالى من غير ما يطلب صلاحيات Administrator
 PrivilegesRequired=lowest
 OutputDir=installer_output
-OutputBaseFilename=SUITES_Setup_{#MyAppVersion}
+OutputBaseFilename=SUITS_Setup_{#MyAppVersion}
 SetupIconFile=assets\app.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 UninstallDisplayName={#MyAppName}

@@ -4,7 +4,7 @@ license_tool.py — أداة التراخيص (عندك إنت بس، مش بت�
 العميل يبعتلك "كود الجهاز" ← تختار الباقة وعدد المستخدمين ← الأداة تطلّع "كود التفعيل"
 وتسجّله فى licenses_log.csv (سجل بكل التراخيص اللى طلعت).
 
-التشغيل: دبل كليك على SUITES-License-Tool.exe (أو: python license_tool/license_tool.py)
+التشغيل: دبل كليك على SUITS-License-Tool.exe (أو: python license_tool/license_tool.py)
 أول مرة بيسألك على مكان ملف المفتاح السرى seller_private_key.pem وبيفتكره.
 """
 
@@ -56,7 +56,7 @@ def find_key(parent=None, ask=False):
 class LicenseTool(QWidget):
     def __init__(self, key_path=None):
         super().__init__()
-        self.setWindowTitle("🔑 أداة التراخيص — SUITES")
+        self.setWindowTitle("🔑 أداة التراخيص — SUITS")
         self.resize(1100, 760)
         self.setLayoutDirection(Qt.RightToLeft)
         self._load_key(key_path or license_core.PRIVATE_KEY_PATH)
@@ -260,7 +260,7 @@ def selftest():
     """للـ build: بيتأكد إن الأداة بتعمل كود والبرنامج بيقبله (بمفتاح تجربة مؤقت)."""
     import tempfile
     import traceback
-    out = os.path.join(tempfile.gettempdir(), "suites_license_tool_selftest.txt")
+    out = os.path.join(tempfile.gettempdir(), "suits_license_tool_selftest.txt")
     try:
         from cryptography.hazmat.primitives import serialization
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey

@@ -2,7 +2,7 @@
 import os
 import sys
 
-APP_NAME = "SUITES"                 # غيّره لاسم البراند لما تختاره (وغيّره كمان فى installer.iss)
+APP_NAME = "SUITS"                 # غيّره لاسم البراند لما تختاره (وغيّره كمان فى installer.iss)
 APP_SUBTITLE = "نظام إدارة مصانع البدل"
 APP_VERSION = "1.0.0"
 # بياناتك إنت (اللى بتبيع البرنامج): بتظهر للعميل فى شاشة التفعيل والتجديد
