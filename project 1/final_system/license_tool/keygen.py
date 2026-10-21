@@ -14,6 +14,12 @@ import os
 import re
 import sys
 
+# شاشة ويندوز القديمة مش بتعرف تطبع العربى والإيموجى ← منغير ما البرنامج يقع
+try:
+    sys.stdout.reconfigure(errors="replace")
+except (AttributeError, ValueError):
+    pass
+
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 

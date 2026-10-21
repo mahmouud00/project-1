@@ -9,6 +9,12 @@ make_icon.py
 import os
 import sys
 
+# شاشة ويندوز القديمة مش بتعرف تطبع العربى والإيموجى ← منغير ما البرنامج يقع
+try:
+    sys.stdout.reconfigure(errors="replace")
+except (AttributeError, ValueError):
+    pass
+
 from PIL import Image, ImageDraw
 
 HERE = os.path.dirname(os.path.abspath(__file__))

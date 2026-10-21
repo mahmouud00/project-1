@@ -8,6 +8,10 @@ on:
     paths: ["project 1/final_system/**", ".github/workflows/build-windows.yml"]
   workflow_dispatch:
 
+env:
+  PYTHONUTF8: "1"            # الرسايل العربى فى شاشة ويندوز من غير أخطاء
+  PYTHONIOENCODING: "utf-8"
+
 defaults:
   run:
     shell: pwsh
