@@ -25,6 +25,7 @@ import time
 from datetime import date, datetime, timedelta
 
 from . import db as dbmod
+from . import formulas
 from . import licensing
 
 # ========================= ثوابت =========================
@@ -192,7 +193,31 @@ class Service:
     def _open(self):
         conn = dbmod.connect(self.db_path)
         dbmod.init_schema(conn)
+        # شركة موجودة من إصدار قبل المعادلات ← تاخد المعادلات الافتراضية مرة واحدة
+        if conn.execute("select 1 from company where id = 1").fetchone() and \
+                not conn.execute("select 1 from meta where key = 'bom_seeded'").fetchone():
+            self._seed_bom(conn)
         return conn
+
+    @staticmethod
+    def _seed_bom(conn):
+        """الخامات الأساسية + تركيبة كل نوع شغل (المدير يعدّلها من الإعدادات)."""
+        materials = {}
+        for name, category, unit in dbmod.DEFAULT_MATERIALS:
+            row = conn.execute("select id from materials where name = ?", (name,)).fetchone()
+            materials[name] = row[0] if row else conn.execute(
+                "insert into materials (name, category, unit) values (?, ?, ?)", (name, category, unit)).lastrowid
+        for type_name, lines in dbmod.DEFAULT_BOM.items():
+            row = conn.execute("select id from garment_types where name = ?", (type_name,)).fetchone()
+            if not row or conn.execute("select 1 from bom_lines where garment_type_id = ?", (row[0],)).fetchone():
+                continue
+            for i, (material, formula, fallback) in enumerate(lines, 1):
+                conn.execute("insert into bom_lines (garment_type_id, material_id, is_fabric, formula, fallback_qty, "
+                             "sort) values (?, ?, ?, ?, ?, ?)",
+                             (row[0], materials.get(material), 1 if material is None else 0, formula, fallback, i))
+        conn.execute("update style_options set choices = replace(choices, 'دبل (صفين)', 'دبل (صفين) = +0.3') "
+                     "where choices like '%دبل (صفين)%' and choices not like '%دبل (صفين) =%'")
+        conn.execute("insert or replace into meta (key, value) values ('bom_seeded', '1')")
 
     # ---------------------------------------------------------------
     #                     تنفيذ طلب جاى من برا
@@ -393,6 +418,7 @@ class Service:
             self.x("insert into style_options (name, choices, sort) values (?, ?, ?)", (opt, choices, i))
         user_id = self._insert_user(full_name or "المدير", username, password, "مدير", True, True, [], [], [])
         self.user = self._user_dict(self.q1("select * from users where id = ?", (user_id,)))
+        self._seed_bom(self.conn)
         self._log("إنشاء الشركة", name)
         return self._start_session(user_id)
 
@@ -478,7 +504,10 @@ class Service:
             "piece_rates": self.q("select * from piece_rates"),
             "staff": self.q("select id, name, mobile, kind, craft, pay_type, hired_on, is_active from staff "
                             "order by name"),
-            "materials": self.q("select id, name, category, unit, qty, is_active from materials order by name"),
+            "materials": self._materials_with_reserved("select id, name, category, unit, qty, is_active "
+                                                       "from materials order by name"),
+            "bom_lines": self.q("select b.*, m.name as material_name, m.unit from bom_lines b "
+                                "left join materials m on m.id = b.material_id order by b.garment_type_id, b.sort, b.id"),
             "products": self.q("select p.id, p.name, p.size, p.color, p.qty, p.price, p.is_active, "
                                "g.name as garment_type from products p "
                                "left join garment_types g on g.id = p.garment_type_id order by p.name"),
@@ -968,12 +997,14 @@ class Service:
 
     def _orders(self, where="1 = 1", args=()):
         rows = self.q(f"{self.ORDER_SELECT} where {where} order by o.id desc", args)
+        info = {m["id"]: m for m in self.q("select id, name, unit from materials")} if rows else {}
         for r in rows:
             r["measurements"] = _jload(r["measurements"], {})
             r["style"] = _jload(r["style"], {})
             r["attachments"] = _jload(r["attachments"], [])
             r["status_label"] = STATUS_LABELS.get(r["status"], r["status"])
             r["needs_fitting"] = bool(r["needs_fitting"])
+            r["materials_plan"] = self._plan_with_names(_jload(r["materials_plan"], []), info)
         return rows
 
     def _order(self, order_id):
@@ -1024,7 +1055,7 @@ class Service:
     def add_order(self, price, garment_type_id=None, quantity=1, customer_id=None, customer_name=None, mobile=None,
                   address=None, deposit=0, deposit_method_id=None, seller_id=None, fabric_source="factory",
                   fabric_desc=None, measurements=None, style=None, notes=None, needs_fitting=True, due_date=None,
-                  fitting_date=None, branch_id=None, files=None, save_measurements=True):
+                  fitting_date=None, branch_id=None, files=None, save_measurements=True, fabric_material_id=None):
         self._require("orders")
         price = _amount(price, "السعر الإجمالى")
         deposit = _amount(deposit or 0, "العربون", allow_zero=True)
@@ -1047,21 +1078,26 @@ class Service:
             raise AppError("رقم موبايل العميل مطلوب")
         if self.val("select require_attachment from company where id = 1") and not files:
             raise AppError("لازم ترفع ملف واحد على الأقل مع الطلب (الإعدادات بتقول كده)")
+        self._check_exists("materials", fabric_material_id, "القماش")
         cid = self._customer(customer_name, mobile, customer_id, address)
         clean = self._clean_measurements(measurements)
+        style = {k: v for k, v in (style or {}).items() if _t(v)}
+        plan = self._calc_plan(garment_type_id, quantity, clean, style, fabric_source, fabric_material_id)
         if clean and save_measurements:
             self._store_measurements(cid, clean)
         file_ids = self._save_files(files)
         oid = self.x("""insert into orders (branch_id, customer_id, garment_type_id, quantity, price, deposit,
                         deposit_method_id, seller_id, fabric_source, fabric_desc, measurements, style, notes,
-                        needs_fitting, due_date, fitting_date, status, attachments, created_by)
-                        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'awaiting_deposit', ?, ?)""",
+                        needs_fitting, due_date, fitting_date, status, attachments, created_by, fabric_material_id,
+                        materials_plan)
+                        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'awaiting_deposit', ?, ?, ?, ?)""",
                      (self._branch(branch_id), cid, garment_type_id, quantity, price, deposit,
                       deposit_method_id if deposit else None, seller_id, fabric_source, _t(fabric_desc),
                       json.dumps(clean, ensure_ascii=False),
-                      json.dumps({k: v for k, v in (style or {}).items() if _t(v)}, ensure_ascii=False),
+                      json.dumps(style, ensure_ascii=False),
                       _t(notes), 1 if needs_fitting else 0, _date(due_date, "ميعاد التسليم"),
-                      _date(fitting_date, "ميعاد البروفة"), json.dumps(file_ids), self.user["id"]))
+                      _date(fitting_date, "ميعاد البروفة"), json.dumps(file_ids), self.user["id"],
+                      fabric_material_id or None, self._plan_json(plan)))
         self._event(oid, "طلب جديد", f"السعر {price:g} — العربون {deposit:g}")
         self._log("طلب تفصيل جديد", f"#{oid}", price)
         return oid
@@ -1076,7 +1112,8 @@ class Service:
     @rpc(write=True)
     def update_order(self, order_id, price=None, deposit=None, quantity=None, due_date=None, fitting_date=None,
                      notes=None, fabric_desc=None, measurements=None, style=None, needs_fitting=None,
-                     garment_type_id=None, seller_id=None, deposit_method_id=None):
+                     garment_type_id=None, seller_id=None, deposit_method_id=None, fabric_source=None,
+                     fabric_material_id=None):
         o = self._order_for_update(order_id)
         if o["status"] == "completed":
             raise AppError("الطلب ده اتسلّم واتقفل ومينفعش يتعدّل")
@@ -1117,6 +1154,17 @@ class Service:
             sets["garment_type_id"] = self._check_exists("garment_types", garment_type_id, "النوع")
         if seller_id is not None:
             sets["seller_id"] = self._check_exists("staff", seller_id, "السيلز") or None
+        if fabric_source is not None:
+            if fabric_source not in ("factory", "customer"):
+                raise AppError("اختار القماش من المصنع ولا من العميل")
+            sets["fabric_source"] = fabric_source
+        if fabric_material_id is not None:
+            sets["fabric_material_id"] = self._check_exists("materials", fabric_material_id, "القماش") or None
+        if not o["cut_at"]:       # لسه متقصش ← الخامات المحجوزة بتتحسب من جديد بالبيانات الجديدة
+            new = {**o, **sets}
+            sets["materials_plan"] = self._plan_json(self._calc_plan(
+                new["garment_type_id"], new["quantity"], _jload(new["measurements"], {}), _jload(new["style"], {}),
+                new["fabric_source"], new["fabric_material_id"]))
         self.conn.execute(f"update orders set {', '.join(f'{k} = ?' for k in sets)} where id = ?",
                           (*sets.values(), order_id))
         self._event(order_id, "تعديل الطلب")
@@ -1216,7 +1264,8 @@ class Service:
         return entry
 
     @rpc(write=True)
-    def finish_cutting(self, order_id, worker_id=None, materials=None):
+    def finish_cutting(self, order_id, worker_id=None, materials=None, allow_short=False):
+        """allow_short: المستخدم وافق يكمل حتى لو المخزن مش مكفّى (الرصيد بيبقى بالسالب لحد ما يستلم)."""
         o = self._move(order_id, "cutting", "cutting", "sewing", "cut_at", "تم القص")
         cost = 0.0
         used = []
@@ -1226,8 +1275,8 @@ class Service:
             m = self.q1("select * from materials where id = ?", (mid,))
             if not m:
                 raise AppError("اختار الخامة")
-            if m["qty"] + 1e-9 < qty:
-                raise AppError(f"الكمية المتاحة من «{m['name']}» {m['qty']:g} {m['unit']} بس")
+            if m["qty"] + 1e-9 < qty and not allow_short:
+                raise AppError(f"الكمية الموجودة من «{m['name']}» {m['qty']:g} {m['unit']} بس")
             self.conn.execute("update materials set qty = qty - ? where id = ?", (qty, mid))
             self.x("insert into material_moves (material_id, move_type, qty, unit_cost, order_id, note, created_by) "
                    "values (?, 'out', ?, ?, ?, ?, ?)",
@@ -1331,6 +1380,166 @@ class Service:
         return back[o["status"]]
 
     # ===============================================================
+    #                  معادلات الخامات (التركيبة)
+    # ===============================================================
+
+    def _formula_names(self):
+        return formulas.measure_names(self.q("select grp, name from measure_fields"))
+
+    def _style_extra(self, style):
+        """القماش الزيادة من تفاصيل الموديل (اختيار مكتوب جنبه = +0.3 مثلاً)."""
+        extra = 0.0
+        for opt in self.q("select name, choices from style_options where is_active = 1"):
+            chosen = (style or {}).get(opt["name"])
+            if not chosen:
+                continue
+            for line in str(opt["choices"] or "").splitlines():
+                name, value = formulas.split_choice(line)
+                if name == chosen:
+                    extra += value
+        return extra
+
+    def _calc_plan(self, garment_type_id, quantity, measurements, style, fabric_source, fabric_material_id):
+        """الخامات اللى الطلب محتاجها: [{material_id, qty, note}] (الكمية للطلب كله)."""
+        if not garment_type_id:
+            return []
+        names = self._formula_names()
+        totals, notes = {}, {}
+        for line in self.q("select * from bom_lines where garment_type_id = ? and is_active = 1 order by sort, id",
+                           (garment_type_id,)):
+            if line["is_fabric"]:
+                if fabric_source == "customer" or not fabric_material_id:
+                    continue
+                material = fabric_material_id
+            else:
+                material = line["material_id"]
+            if not material:
+                continue
+            note = ""
+            try:
+                qty = formulas.evaluate(line["formula"], names, measurements)
+            except formulas.MissingMeasure as e:
+                qty, note = line["fallback_qty"], f"مقاس «{e}» ناقص — اتحسبت بالكمية الافتراضية"
+            except formulas.FormulaError as e:
+                qty, note = line["fallback_qty"], f"المعادلة فيها غلط ({e}) — اتحسبت بالكمية الافتراضية"
+            if line["is_fabric"]:
+                qty += self._style_extra(style)
+            total = round(qty * int(quantity or 1), 3)
+            if total <= 0:
+                continue
+            totals[material] = round(totals.get(material, 0) + total, 3)
+            if note:
+                notes[material] = note
+        return [{"material_id": m, "qty": q, "note": notes.get(m, "")} for m, q in totals.items()]
+
+    @staticmethod
+    def _plan_json(plan):
+        return json.dumps([{"material_id": p["material_id"], "qty": p["qty"]} for p in plan])
+
+    def _reserved(self, exclude_order=None):
+        """الخامات المحجوزة للطلبات اللى لسه متقصتش."""
+        out = {}
+        for r in self.q("select id, materials_plan from orders where cut_at is null and status <> 'completed' "
+                        "and materials_plan <> '[]'"):
+            if r["id"] == exclude_order:
+                continue
+            for p in _jload(r["materials_plan"], []):
+                try:
+                    out[p["material_id"]] = out.get(p["material_id"], 0) + float(p["qty"])
+                except (KeyError, TypeError, ValueError):
+                    pass
+        return out
+
+    def _materials_with_reserved(self, sql, args=()):
+        rows = self.q(sql, args)
+        reserved = self._reserved()
+        for m in rows:
+            m["reserved"] = round(reserved.get(m["id"], 0), 3)
+            m["available"] = round(m["qty"] - m["reserved"], 3)
+        return rows
+
+    def _plan_with_names(self, plan, info):
+        if not plan:
+            return []
+        out = []
+        for p in plan:
+            m = info.get(p.get("material_id"))
+            if m:
+                out.append({"material_id": m["id"], "name": m["name"], "unit": m["unit"], "qty": p["qty"],
+                            "note": p.get("note", "")})
+        return out
+
+    @rpc()
+    def calc_materials(self, garment_type_id=None, quantity=1, measurements=None, style=None, fabric_source="factory",
+                       fabric_material_id=None, order_id=None):
+        """حساب الخامات قبل الحفظ (للفورم): الكمية + الموجود فى المخزن بعد المحجوز لطلبات تانية."""
+        self._require(ORDER_PAGES, "view")
+        try:
+            quantity = max(int(quantity or 1), 1)
+        except (TypeError, ValueError):
+            quantity = 1
+        plan = self._calc_plan(garment_type_id, quantity, self._clean_measurements(measurements), style or {},
+                               fabric_source, fabric_material_id)
+        reserved = self._reserved(exclude_order=order_id)
+        info = {m["id"]: m for m in self.q("select id, name, unit, qty from materials")}
+        out = []
+        for p in plan:
+            m = info.get(p["material_id"])
+            if not m:
+                continue
+            available = round(m["qty"] - reserved.get(m["id"], 0), 3)
+            out.append({"material_id": m["id"], "name": m["name"], "unit": m["unit"], "qty": p["qty"],
+                        "available": available, "short": p["qty"] > available + 1e-9, "note": p["note"]})
+        return out
+
+    @rpc("admin", write=True)
+    def save_bom_line(self, garment_type_id, formula, material_id=None, is_fabric=False, fallback_qty=0, sort=0,
+                      is_active=True, line_id=None):
+        self._check_exists("garment_types", garment_type_id, "النوع")
+        if not garment_type_id:
+            raise AppError("اختار النوع")
+        if not is_fabric:
+            if not material_id:
+                raise AppError("اختار الخامة")
+            self._check_exists("materials", material_id, "الخامة")
+        try:
+            formulas.compile_formula(formula, self._formula_names())
+        except formulas.FormulaError as e:
+            raise AppError(str(e))
+        values = (garment_type_id, None if is_fabric else material_id, 1 if is_fabric else 0, str(formula).strip(),
+                  _amount(fallback_qty or 0, "الكمية الافتراضية", allow_zero=True), int(sort or 0),
+                  1 if is_active else 0)
+        if line_id:
+            cur = self.conn.execute("update bom_lines set garment_type_id = ?, material_id = ?, is_fabric = ?, "
+                                    "formula = ?, fallback_qty = ?, sort = ?, is_active = ? where id = ?",
+                                    (*values, line_id))
+            if cur.rowcount == 0:
+                raise AppError("السطر ده مش موجود")
+            result = line_id
+        else:
+            result = self.x("insert into bom_lines (garment_type_id, material_id, is_fabric, formula, fallback_qty, "
+                            "sort, is_active) values (?, ?, ?, ?, ?, ?, ?)", values)
+        self._log("تعديل معادلة خامات", str(formula))
+        return result
+
+    @rpc("admin", write=True)
+    def delete_bom_line(self, line_id):
+        cur = self.conn.execute("delete from bom_lines where id = ?", (line_id,))
+        if cur.rowcount == 0:
+            raise AppError("السطر ده مش موجود")
+        return True
+
+    @rpc("admin")
+    def test_formula(self, formula, measurements=None):
+        """تجربة معادلة بمقاسات (للإعدادات): بيرجّع الكمية أو رسالة الغلط."""
+        try:
+            return {"ok": True, "qty": round(formulas.evaluate(formula, self._formula_names(), measurements or {}), 3)}
+        except formulas.MissingMeasure as e:
+            return {"ok": False, "error": f"محتاج مقاس «{e}» عشان تتحسب"}
+        except formulas.FormulaError as e:
+            return {"ok": False, "error": str(e)}
+
+    # ===============================================================
     #                     البيع الجاهز (البدل الجاهزة)
     # ===============================================================
 
@@ -1426,9 +1635,11 @@ class Service:
     @rpc()
     def materials(self):
         self._require(("inventory", "cutting"), "view")
-        return self.q("""select m.*, m.qty * m.avg_cost as value,
-                         (m.reorder_level > 0 and m.qty <= m.reorder_level) as low
+        rows = self._materials_with_reserved("""select m.*, m.qty * m.avg_cost as value
                          from materials m order by m.is_active desc, m.category, m.name""")
+        for m in rows:      # "قربت تخلص" بتتحسب على المتاح بعد الحجز
+            m["low"] = bool(m["reorder_level"] > 0 and m["available"] <= m["reorder_level"])
+        return rows
 
     @rpc(write=True)
     def save_material(self, name, unit="متر", category=None, reorder_level=0, is_active=True, material_id=None):
@@ -1971,8 +2182,9 @@ class Service:
                               coalesce(sum(case when txn_type = 'cheque' and cheque_status = 'due' then amount end), 0)
                               as cheques_due from supplier_txns""")
         k.update(sup)
-        k["low_stock"] = self.val("select count(*) from materials where is_active = 1 and reorder_level > 0 "
-                                  "and qty <= reorder_level", default=0)
+        k["low_stock"] = sum(1 for m in self._materials_with_reserved(
+            "select id, qty, reorder_level from materials where is_active = 1 and reorder_level > 0")
+            if m["available"] <= m["reorder_level"])
         k["stock_value"] = self.val("select sum(qty * avg_cost) from materials where qty > 0", default=0) + \
             self.val("select sum(qty * cost) from products where qty > 0", default=0)
 

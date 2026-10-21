@@ -544,7 +544,8 @@ class StyleEditor(QWidget):
         for i, opt in enumerate(active):
             combo = QComboBox()
             combo.setEditable(True)
-            choices = [c for c in str(opt.get("choices") or "").splitlines() if c.strip()]
+            # "دبل (صفين) = +0.3": اللى بعد = قماش زيادة للمعادلات، مش بيظهر فى القايمة
+            choices = [c.partition("=")[0].strip() for c in str(opt.get("choices") or "").splitlines() if c.strip()]
             fill_combo(combo, [""] + choices)
             combo.setMinimumWidth(130)
             self._combos[opt["name"]] = combo

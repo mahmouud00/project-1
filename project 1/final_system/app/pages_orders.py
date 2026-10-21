@@ -163,6 +163,17 @@ class OrderDialog(QDialog):
                    (order or {}).get("fabric_source", "factory"))
         self._fabric = QLineEdit((order or {}).get("fabric_desc") or "")
         self._fabric.setPlaceholderText("نوع ولون القماش")
+        # القماش من المخزن: المعادلات بتحسب الكمية وبتحجزها لحد القص
+        self._fabric_mat = searchable(QComboBox())
+        mats = sorted((m for m in lk.get("materials", []) if m["is_active"]),
+                      key=lambda m: (m.get("category") != "قماش", m["name"]))
+        fill_combo(self._fabric_mat, [("— مش محدد —", None)] + [
+            (f"{m['name']} (متاح {ui.qty(m.get('available', m['qty']))} {m['unit']})", m["id"]) for m in mats],
+            (order or {}).get("fabric_material_id"))
+        self._locked = bool(edit and order.get("cut_at"))      # اتقص خلاص ← الخامات اتصرفت
+        self._fabric_mat.setEnabled(not self._locked)
+        self._fabric_source.setEnabled(not self._locked)
+        self._fabric_source.currentIndexChanged.connect(self._fabric_source_changed)
         self._fitting = QCheckBox("محتاج بروفة")
         self._fitting.setChecked(bool((order or {}).get("needs_fitting", True)))
         self._fitting_date = QLineEdit(iso_to_display((order or {}).get("fitting_date")))
@@ -174,8 +185,8 @@ class OrderDialog(QDialog):
         fill_combo(self._branch, self._app.branch_options())
         cells = [("النوع", self._type), ("العدد", self._qty), ("السعر الإجمالى *", self._price),
                  ("العربون", self._deposit), ("طريقة دفع العربون", self._method), ("السيلز", self._seller),
-                 ("القماش", self._fabric_source), ("وصف القماش", self._fabric), ("ميعاد التسليم", self._due),
-                 ("ميعاد البروفة", self._fitting_date)]
+                 ("القماش", self._fabric_source), ("القماش من المخزن", self._fabric_mat), ("وصف القماش", self._fabric),
+                 ("ميعاد التسليم", self._due), ("ميعاد البروفة", self._fitting_date)]
         for i, (title, w) in enumerate(cells):
             r, c = divmod(i, 3)
             g.addWidget(ui.label(title), r, c * 2)
@@ -215,7 +226,25 @@ class OrderDialog(QDialog):
         self._style = StyleEditor(lk.get("style_options", []), (order or {}).get("style"))
         sl.addWidget(self._style)
         lay.addWidget(sbox)
+
+        # ---------- الخامات المحسوبة ----------
+        bbox = QGroupBox("🧮 الخامات المطلوبة (محسوبة بالمعادلات من المقاسات)")
+        bl = QVBoxLayout(bbox)
+        self._plan_label = ui.label("", wrap=True)
+        self._plan_label.setTextFormat(Qt.RichText)
+        bl.addWidget(self._plan_label)
+        bl.addLayout(ui.hbox(ui.button("📐 احسب الخامات", "teal", self._calc_plan),
+                             ui.muted("بتتحجز من المخزن لما الطلب يتسجل، وبتتخصم فعلاً عند القص. "
+                                      "المعادلات بتتعدّل من الإعدادات.")))
+        lay.addWidget(bbox)
         lay.addStretch(1)
+        for signal in (self._type.currentIndexChanged, self._fabric_mat.currentIndexChanged):
+            signal.connect(lambda _i: self._calc_plan())
+        self._fabric_source_changed()
+        if self._locked:
+            self._plan_label.setText("الطلب اتقص خلاص والخامات اتصرفت — شوفها فى تفاصيل الطلب")
+        else:
+            self._calc_plan()
 
         self._btn = ui.button("💾 حفظ التعديل" if edit else "💾 حفظ الطلب", "green", self._save)
         self._msg = ui.label("", "errorMsg", wrap=True)
@@ -245,6 +274,61 @@ class OrderDialog(QDialog):
                 self._measure.set(detail["customer"].get("measurements") or {})
         self._app.worker.run(lambda: self._app.backend.customer_detail(customer_id=match["id"]), got, lambda e: None)
 
+    def _fabric_source_changed(self, *_):
+        customer = combo_value(self._fabric_source) == "customer"
+        self._fabric_mat.setEnabled(not customer and not self._locked)
+        if customer:
+            self._fabric_mat.setCurrentIndex(0)
+        if hasattr(self, "_plan_label") and not self._locked:
+            self._calc_plan()
+
+    def _plan_args(self):
+        try:
+            qty = parse_int(self._qty.text() or "1")
+        except AppError:
+            qty = 1
+        mat = combo_value(self._fabric_mat)
+        return dict(garment_type_id=combo_value(self._type), quantity=qty, measurements=self._measure.get(),
+                    style=self._style.get(), fabric_source=combo_value(self._fabric_source),
+                    fabric_material_id=mat if isinstance(mat, int) else None,
+                    order_id=self._order["id"] if self._order else None)
+
+    def _calc_plan(self, then=None):
+        if self._locked:
+            if then:
+                then([])
+            return
+        args = self._plan_args()
+        self._plan_label.setText("⏳ بيحسب…")
+
+        def done(plan):
+            self._show_plan(plan, args)
+            if then:
+                then(plan)
+        def failed(e):
+            self._plan_label.setText(f"❌ {e}")
+            if then:
+                self._fail(e)
+        self._app.worker.run(lambda: self._app.backend.calc_materials(**args), done, failed)
+
+    def _show_plan(self, plan, args):
+        if not args["garment_type_id"]:
+            self._plan_label.setText("اختار النوع عشان الخامات تتحسب")
+            return
+        if not plan:
+            self._plan_label.setText("مفيش خامات متسجلة للنوع ده (تقدر تضيفها من الإعدادات ← تركيبة الخامات)")
+            return
+        rows = []
+        for p in plan:
+            color = ui.RED if p["short"] else ui.GREEN
+            status = f"⚠️ الموجود {ui.qty(p['available'])} بس" if p["short"] else f"✔ متاح {ui.qty(p['available'])}"
+            note = f" — <i>{p['note']}</i>" if p.get("note") else ""
+            rows.append(f"<b>{p['name']}</b>: {ui.qty(p['qty'])} {p['unit']} "
+                        f"<span style='color:{color};'>({status})</span>{note}")
+        if args["fabric_source"] == "factory" and not args["fabric_material_id"]:
+            rows.append(f"<span style='color:{ui.AMBER};'>اختار «القماش من المخزن» عشان القماش يتحسب ويتحجز</span>")
+        self._plan_label.setText("<br>".join(rows))
+
     def _type_changed(self):
         if self._price.text().strip():
             return
@@ -262,7 +346,9 @@ class OrderDialog(QDialog):
     def _values(self):
         price = parse_amount(self._price.text(), "السعر الإجمالى")
         deposit = parse_amount(self._deposit.text(), "العربون", allow_zero=True)
+        mat = combo_value(self._fabric_mat)
         values = dict(price=price, deposit=deposit, deposit_method_id=combo_value(self._method),
+                      fabric_material_id=mat if isinstance(mat, int) else None,
                       quantity=parse_int(self._qty.text() or "1"), garment_type_id=combo_value(self._type),
                       seller_id=combo_value(self._seller), fabric_desc=self._fabric.text(),
                       due_date=iso_date(self._due.text()), fitting_date=iso_date(self._fitting_date.text()),
@@ -284,7 +370,11 @@ class OrderDialog(QDialog):
             if o["status"] != "awaiting_deposit":
                 v.pop("deposit")
                 v.pop("deposit_method_id")
-            v.pop("fabric_source", None)
+            if self._locked:
+                v.pop("fabric_material_id")
+            else:
+                v["fabric_source"] = combo_value(self._fabric_source)
+                v["fabric_material_id"] = v["fabric_material_id"] or ""
             if v.get("garment_type_id") is None:
                 v.pop("garment_type_id")
             if v.get("seller_id") is None:
@@ -309,7 +399,17 @@ class OrderDialog(QDialog):
         self._btn.setEnabled(False)
         self._btn.setText("جارى الحفظ…")
         self._msg.setText("")
-        self._app.worker.run(action, self._done, self._fail)
+
+        def checked(plan):
+            short = [p for p in plan if p["short"]]
+            if short and not ui.ask_yes_no(self, "المخزن مش مكفّى للطلب ده:\n" + "\n".join(
+                    f"• {p['name']}: محتاج {ui.qty(p['qty'])} والمتاح {ui.qty(p['available'])} {p['unit']}"
+                    for p in short) + "\n\nتسجّل الطلب برضه؟ (اشترى الناقص قبل القص)", "المخزن"):
+                self._fail("اتلغى — المخزن مش مكفّى")
+                return
+            self._app.worker.run(action, self._done, self._fail)
+
+        self._calc_plan(then=checked)
 
     def _done(self, result):
         self.accept()
@@ -414,6 +514,11 @@ class OrderDetailDialog(QDialog):
                                                  e.get("user_name")]} for e in o["events"]])
         tabs.addTab(ev, f"🕒 السجل ({len(o['events'])})")
 
+        if o.get("materials_plan") and not o.get("cut_at"):
+            pt = DataTable([("الخامة", "wide"), ("الكمية المحجوزة", "qty"), ("الوحدة", "text")])
+            pt.set_rows([{"key": i, "values": [p["name"], p["qty"], p["unit"]]}
+                         for i, p in enumerate(o["materials_plan"])])
+            tabs.addTab(pt, "🧮 الخامات المحجوزة")
         if o["materials_used"] or o["work"]:
             w = QWidget()
             wl = QVBoxLayout(w)
@@ -977,18 +1082,25 @@ class CutDialog(QDialog):
         self._btn = ui.button("💾 تأكيد — الطلب يروح الخياطة", "green", self._save)
         self._msg = ui.label("", "errorMsg", wrap=True)
         lay.addLayout(ui.hbox(self._btn, self._msg))
-        if self._materials:
+        plan = order.get("materials_plan") or []
+        if plan:
+            lay.insertWidget(3, ui.muted("الكميات محسوبة بالمعادلات من المقاسات — عدّلها لو اللى اتصرف فعلاً مختلف، "
+                                         "أو امسح السطر بـ ✖"))
+            for p in plan:
+                self._add_row(p["material_id"], p["qty"])
+        elif self._materials:
             self._add_row()
         else:
             lay.insertWidget(3, ui.muted("مفيش خامات فى المخزن متسجلة (تقدر تكمل من غيرها)"))
         self.setModal(True)
         self.show()
 
-    def _add_row(self):
+    def _add_row(self, material_id=None, amount=None):
         combo = searchable(QComboBox())
         fill_combo(combo, [("— اختار الخامة —", None)] + [
-            (f"{m['name']} (متاح {ui.qty(m['qty'])} {m['unit']})", m["id"]) for m in self._materials])
-        qty = QLineEdit()
+            (f"{m['name']} (موجود {ui.qty(m['qty'])} {m['unit']})", m["id"]) for m in self._materials],
+            material_id)
+        qty = QLineEdit(ui.qty(amount) if amount else "")
         qty.setPlaceholderText("الكمية")
         remove = ui.button("✖", "light")
         row = (combo, qty, remove)
@@ -1018,11 +1130,18 @@ class CutDialog(QDialog):
             self._msg.setText(f"❌ {e}")
             return
         worker = combo_value(self._worker)
+        stock = {m["id"]: m for m in self._materials}
+        short = [f"• {stock[x['material_id']]['name']}: محتاج {ui.qty(x['qty'])} والموجود "
+                 f"{ui.qty(stock[x['material_id']]['qty'])}" for x in materials
+                 if x["material_id"] in stock and x["qty"] > num(stock[x["material_id"]]["qty"]) + 1e-9]
+        if short and not ui.ask_yes_no(self, "الخامات دى مش مكفية فى المخزن:\n" + "\n".join(short) +
+                                       "\n\nتكمل؟ (الرصيد هيبقى بالسالب لحد ما تسجّل استلام الخامات)", "المخزن"):
+            return
         self._btn.setEnabled(False)
         self._app.worker.run(
             lambda: self._app.backend.finish_cutting(order_id=self._o["id"],
                                                      worker_id=worker if isinstance(worker, int) else None,
-                                                     materials=materials),
+                                                     materials=materials, allow_short=bool(short)),
             lambda _r: (self.accept(), self._app.after_change(), self._app.reload_lookups()),
             lambda e: (self._msg.setText(f"❌ {e}"), self._btn.setEnabled(True)))
 

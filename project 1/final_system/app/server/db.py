@@ -10,7 +10,7 @@ db.py — قاعدة البيانات (SQLite)
 
 import sqlite3
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 create table if not exists meta (
@@ -187,6 +187,8 @@ create table if not exists orders (
     status              text not null check (status in ('awaiting_deposit', 'cutting', 'sewing', 'fitting',
                             'finishing', 'ready', 'awaiting_accounts', 'completed')),
     attachments         text not null default '[]',   -- أرقام الملفات فى جدول files
+    fabric_material_id  integer references materials on delete set null,   -- القماش اللى اتختار من المخزن
+    materials_plan      text not null default '[]',   -- الخامات المحسوبة بالمعادلات (محجوزة لحد القص)
     material_cost       real not null default 0,
     labor_cost          real not null default 0,
     final_collected     real check (final_collected >= 0),
@@ -241,6 +243,19 @@ create table if not exists material_moves (
     move_date    text not null default (date('now', 'localtime')),
     created_by   integer,
     created_at   text not null default (datetime('now', 'localtime'))
+);
+
+-- تركيبة كل نوع شغل: الخامات وكميتها للقطعة (رقم أو معادلة بالمقاسات)
+-- material_id فاضى + is_fabric = 1 ← القماش اللى اتختار فى الطلب نفسه
+create table if not exists bom_lines (
+    id               integer primary key,
+    garment_type_id  integer not null references garment_types on delete cascade,
+    material_id      integer references materials on delete cascade,
+    is_fabric        integer not null default 0,
+    formula          text not null,
+    fallback_qty     real not null default 0,      -- الكمية لو مقاسات المعادلة مش متسجلة
+    sort             integer not null default 0,
+    is_active        integer not null default 1
 );
 
 -- البدل الجاهزة
@@ -382,7 +397,11 @@ create table if not exists activity_log (
 """
 
 # رقم الإصدار ← أوامر التحديث (لما نضيف أعمدة فى إصدارات جاية)
-MIGRATIONS = {}
+# (جدول bom_lines بيتعمل من SCHEMA لوحده لأنه create if not exists)
+MIGRATIONS = {
+    2: ["alter table orders add column fabric_material_id integer references materials on delete set null",
+        "alter table orders add column materials_plan text not null default '[]'"],
+}
 
 
 def connect(path) -> sqlite3.Connection:
@@ -444,9 +463,34 @@ DEFAULT_MEASURE_FIELDS = {
 
 DEFAULT_STYLE_OPTIONS = [
     ("الياقة", "عادية\nشال\nمدببة (Peak)"),
-    ("الزراير", "زرار واحد\n2 زرار\n3 زراير\nدبل (صفين)"),
+    ("الزراير", "زرار واحد\n2 زرار\n3 زراير\nدبل (صفين) = +0.3"),
     ("الفتحة من ورا", "بدون\nفتحة واحدة\nفتحتين"),
     ("الجيوب", "عادى بقلاب\nمن غير قلاب\nجيب ساعة"),
     ("البطانة", "كاملة\nنص بطانة"),
     ("البنطلون", "بكسرة\nمن غير كسرة"),
 ]
+
+
+# ========================= معادلات الخامات الافتراضية =========================
+# الخامات اللى بتتعمل لشركة جديدة (الكمية صفر، والمدير يستلم عليها من المخزن)
+DEFAULT_MATERIALS = [("بطانة", "بطانة", "متر"), ("حشو وتقوية", "حشو وتقوية", "متر"), ("زراير بدلة", "زراير", "قطعة"),
+                     ("خيط", "خيط", "بكرة")]
+
+_SUIT = "([جاكيت الطول] + [بنطلون الطول] + [جاكيت طول الكم]) ÷ 100 + 0.4 + لو([جاكيت الصدر] > 110، 0.25، 0)"
+# النوع ← [(الخامة أو None = القماش اللى اتختار فى الطلب، المعادلة للقطعة، الكمية لو المقاسات ناقصة)]
+DEFAULT_BOM = {
+    "بدلة 2 قطعة": [(None, f"تقريب({_SUIT}، 0.25)", 3.25),
+                    ("بطانة", "تقريب(([جاكيت الطول] + [جاكيت طول الكم]) ÷ 100، 0.25)", 1.5),
+                    ("حشو وتقوية", "1", 1), ("زراير بدلة", "10", 10), ("خيط", "1", 1)],
+    "بدلة 3 قطع": [(None, f"تقريب({_SUIT} + [صديرى الطول] ÷ 100 + 0.1، 0.25)", 3.75),
+                   ("بطانة", "تقريب(([جاكيت الطول] + [جاكيت طول الكم] + [صديرى الطول]) ÷ 100، 0.25)", 2),
+                   ("حشو وتقوية", "1.25", 1.25), ("زراير بدلة", "16", 16), ("خيط", "1", 1)],
+    "جاكيت": [(None, "تقريب(([جاكيت الطول] + [جاكيت طول الكم]) ÷ 100 + 0.35 + لو([جاكيت الصدر] > 110، 0.25، 0)، 0.25)",
+               1.9),
+              ("بطانة", "تقريب(([جاكيت الطول] + [جاكيت طول الكم]) ÷ 100، 0.25)", 1.5),
+              ("حشو وتقوية", "1", 1), ("زراير بدلة", "10", 10), ("خيط", "1", 1)],
+    "بنطلون": [(None, "تقريب([بنطلون الطول] ÷ 100 + 0.2 + لو([بنطلون الهانش] > 115، 0.25، 0)، 0.25)", 1.3),
+               ("زراير بدلة", "2", 2), ("خيط", "1", 1)],
+    "صديرى": [(None, "تقريب([صديرى الطول] ÷ 100 + 0.2، 0.25)", 0.8),
+              ("بطانة", "تقريب([صديرى الطول] ÷ 100 + 0.1، 0.25)", 0.6), ("زراير بدلة", "6", 6)],
+}

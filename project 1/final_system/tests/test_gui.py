@@ -161,8 +161,13 @@ class GuiFlowTest(unittest.TestCase):
         first = list(dlg._measure._edits.values())
         first[0].setText("76")
         first[1].setText("46")
+        fabric_id = [m for m in b.materials() if m["name"] == "قماش صوف كحلى"][0]["id"]
+        dlg._fabric_mat.setCurrentIndex(dlg._fabric_mat.findData(fabric_id))
+        self.idle()
+        self.assertIn("قماش صوف كحلى", dlg._plan_label.text())     # الخامات اتحسبت بالمعادلات
+        self.assertIn("بطانة", dlg._plan_label.text())
         self.shot("06_order_dialog", dlg)
-        self.answers.append(False)            # تطبع إيصال؟ لأ
+        self.answers.extend([True, False])    # المخزن مش مكفّى: كمّل؟ أيوه — تطبع إيصال؟ لأ
         dlg._save()
         self.idle()
         self.assertFalse(dlg.isVisible(), dlg._msg.text())
@@ -171,6 +176,7 @@ class GuiFlowTest(unittest.TestCase):
         oid = orders[0]["id"]
         self.assertEqual(orders[0]["deposit"], 3000)
         self.assertEqual(len(orders[0]["measurements"]), 2)
+        self.assertEqual({p["name"]: p["qty"] for p in orders[0]["materials_plan"]}["قماش صوف كحلى"], 3.25)
 
         # نفس الموبايل ← العميل بيتعرف ومقاساته بتنزل لوحدها
         dlg2 = OrderDialog(orders_page)
@@ -202,7 +208,7 @@ class GuiFlowTest(unittest.TestCase):
         self.assertEqual(b.order_detail(order_id=oid)["status"], "cutting")
 
         # القص بخامات
-        b.receive_material(material_id=b.materials()[0]["id"], qty=10, unit_cost=250)
+        b.receive_material(material_id=fabric_id, qty=10, unit_cost=250)
         main.reload_lookups()
         self.idle()
         cut = main.show_page_key("cutting")
@@ -211,8 +217,9 @@ class GuiFlowTest(unittest.TestCase):
         cut._with(cut._advance)
         self.idle()
         cd = self.dialogs(CutDialog)[0]
-        combo, qty, _ = cd._rows[0]
-        combo.setCurrentIndex(1)
+        self.assertEqual(len(cd._rows), 5)            # الكميات جاية جاهزة من المعادلات
+        combo, qty, _ = [r for r in cd._rows if r[0].currentData() == fabric_id][0]
+        self.assertEqual(qty.text(), "3.25")
         qty.setText("3.5")
         self.shot("08_cut_dialog", cd)
         cd._save()
@@ -258,6 +265,23 @@ class GuiFlowTest(unittest.TestCase):
         pd._save()
         self.idle()
         self.assertEqual(len(b.users()), 2)
+        self.no_errors()
+
+        # تركيبة الخامات: تجربة معادلة وحفظها من الإعدادات
+        from pages_settings import BomDialog
+        bd = BomDialog(settings)
+        bd._type.setCurrentIndex(bd._type.findData(suit))
+        bd._formula.setPlainText("تقريب([بنطلون الطول] ÷ 100 + 0.3، 0.25)")
+        list(bd._sample._edits.values())[0].setText("100")
+        bd._sample.set({"بنطلون|الطول": "100"})
+        bd._test()
+        self.idle()
+        self.assertIn("1.5", bd._result.text())
+        self.shot("09b_bom_dialog", bd)
+        before = len(b.lookups()["bom_lines"])
+        bd._save()
+        self.idle()
+        self.assertEqual(len(b.lookups()["bom_lines"]), before + 1)
         self.no_errors()
 
         # خروج ودخول بالمستخدم المحدود

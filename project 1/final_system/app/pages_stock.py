@@ -46,9 +46,10 @@ class InventoryPage(BasePage):
         self._m_search = ui.search_box("🔍 بحث بالاسم أو النوع", self._render_materials)
         self._m_totals = ui.label("", "muted")
         l1.addLayout(ui.hbox(self._m_search, self._m_totals))
-        l1.addWidget(ui.muted("🔴 قربت تخلص (الكمية وصلت لحد الطلب). الرمادى = موقوفة. "
-                              "القص بيخصم الخامات من هنا أوتوماتيك."))
-        self._m_table = DataTable([("الخامة", "wide"), ("النوع", "text"), ("الكمية", "qty"), ("الوحدة", "text"),
+        l1.addWidget(ui.muted("«محجوز» = محسوب بالمعادلات لطلبات لسه متقصتش. «المتاح» = الموجود − المحجوز. "
+                              "🔴 المتاح وصل لحد الطلب. الرمادى = موقوفة. القص بيخصم من الموجود."))
+        self._m_table = DataTable([("الخامة", "wide"), ("النوع", "text"), ("الموجود", "qty"),
+                                   ("محجوز لطلبات", "qty"), ("المتاح", "qty"), ("الوحدة", "text"),
                                    ("متوسط السعر", "money"), ("القيمة", "money"), ("حد الطلب", "qty")])
         self._m_table.cellDoubleClicked.connect(lambda r, c: self._with_m(self._m_moves))
         l1.addWidget(self._m_table, 1)
@@ -94,8 +95,8 @@ class InventoryPage(BasePage):
         self._m_totals.setText(f"قيمة الخامات: {money(sum(num(m['value']) for m in shown if num(m['qty']) > 0))}")
         self._m_table.set_rows([{
             "key": m["id"], "color": ui.GRAY if not m["is_active"] else (RED if m["low"] else None),
-            "values": [m["name"], m.get("category"), m["qty"], m["unit"], m["avg_cost"], m["value"],
-                       m["reorder_level"]]} for m in shown])
+            "values": [m["name"], m.get("category"), m["qty"], m["reserved"], m["available"], m["unit"],
+                       m["avg_cost"], m["value"], m["reorder_level"]]} for m in shown])
 
     def _render_products(self):
         shown = [p for p in self._products if ui.matches(self._p_search.text(), p, ("name", "size", "color"))]

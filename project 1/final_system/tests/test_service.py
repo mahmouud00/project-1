@@ -185,12 +185,16 @@ class OrderCycleTests(unittest.TestCase):
         self.a.receive_material(material_id=self.fabric, qty=20, unit_cost=300, supplier_id=self.sup)
         self.a.receive_material(material_id=self.fabric, qty=10, unit_cost=360)
 
+    def mat(self, mid=None):
+        mid = mid or self.fabric
+        return [m for m in self.a.materials() if m["id"] == mid][0]
+
     def treasury_total(self):
         rows = self.a.treasury()
         return sum(r["amount_in"] for r in rows) - sum(r["amount_out"] for r in rows)
 
     def test_full_cycle(self):
-        m = self.a.materials()[0]
+        m = self.mat()
         self.assertAlmostEqual(m["avg_cost"], 320)          # (20×300 + 10×360) / 30
         self.assertEqual(self.a.supplier_balances()[0]["remaining"], 6000)
 
@@ -215,10 +219,10 @@ class OrderCycleTests(unittest.TestCase):
         with self.assertRaisesRegex(AppError, "العربون"):
             self.a.update_order(order_id=oid, deposit=4000)
 
-        with self.assertRaisesRegex(AppError, "المتاحة"):
+        with self.assertRaisesRegex(AppError, "الموجودة"):
             self.a.finish_cutting(order_id=oid, materials=[{"material_id": self.fabric, "qty": 50}])
         self.a.finish_cutting(order_id=oid, worker_id=self.cutter, materials=[{"material_id": self.fabric, "qty": 6}])
-        self.assertAlmostEqual(self.a.materials()[0]["qty"], 24)
+        self.assertAlmostEqual(self.mat()["qty"], 24)
         self.assertEqual(self.a.finish_sewing(order_id=oid, worker_id=self.tailor), "fitting")
         self.a.fitting_result(order_id=oid, ok=False, note="الكم طويل")
         self.assertEqual(self.a.order_detail(order_id=oid)["status"], "sewing")
@@ -329,11 +333,117 @@ class OrderCycleTests(unittest.TestCase):
 
     def test_inventory_adjust(self):
         self.a.adjust_material(material_id=self.fabric, new_qty=28, note="جرد آخر الشهر")
-        self.assertAlmostEqual(self.a.materials()[0]["qty"], 28)
+        self.assertAlmostEqual(self.mat()["qty"], 28)
         self.a.issue_material(material_id=self.fabric, qty=25, note="هالك")
-        self.assertTrue(self.a.materials()[0]["low"])
+        self.assertTrue(self.mat()["low"])
         self.assertEqual(self.a.dashboard()["kpis"]["low_stock"], 1)
         self.assertEqual(len(self.a.material_moves(material_id=self.fabric)), 4)
+
+
+class MaterialsFormulaTests(unittest.TestCase):
+    """تركيبة الخامات: المعادلات الافتراضية، الحجز عند الطلب، الخصم عند القص، وتعديل المعادلات."""
+
+    def setUp(self):
+        self.svc, self.a = new_company()
+        lk = self.a.lookups()
+        self.types = {g["name"]: g["id"] for g in lk["garment_types"]}
+        self.mats = {m["name"]: m["id"] for m in lk["materials"]}
+        self.fabric = self.a.save_material(name="صوف كحلى", unit="متر", category="قماش")
+        self.a.receive_material(material_id=self.fabric, qty=10, unit_cost=300)
+        self.a.receive_material(material_id=self.mats["بطانة"], qty=20, unit_cost=50)
+        self.m = {"جاكيت|الطول": "76", "جاكيت|طول الكم": "62", "بنطلون|الطول": "105", "جاكيت|الصدر": "112"}
+
+    def test_defaults_seeded(self):
+        lk = self.a.lookups()
+        self.assertTrue({"بطانة", "حشو وتقوية", "زراير بدلة", "خيط"} <= set(self.mats))
+        suit_lines = [b for b in lk["bom_lines"] if b["garment_type_id"] == self.types["بدلة 2 قطعة"]]
+        self.assertEqual(len(suit_lines), 5)
+        self.assertTrue(suit_lines[0]["is_fabric"])
+        buttons = [o for o in lk["style_options"] if o["name"] == "الزراير"][0]
+        self.assertIn("دبل (صفين) = +0.3", buttons["choices"])
+
+    def test_calc_reserve_and_cut(self):
+        plan = self.a.calc_materials(garment_type_id=self.types["بدلة 2 قطعة"], quantity=1, measurements=self.m,
+                                     fabric_material_id=self.fabric)
+        q = {p["name"]: p["qty"] for p in plan}
+        self.assertEqual(q["صوف كحلى"], 3.25)      # (76 + 105 + 62) ÷ 100 + 0.4 + 0.25 ← تقريب لأقرب ربع
+        self.assertEqual(q["بطانة"], 1.5)
+        self.assertEqual(q["زراير بدلة"], 10)
+        self.assertTrue([p for p in plan if p["name"] == "زراير بدلة"][0]["short"])   # مفيش زراير فى المخزن
+        # دبل ← قماش زيادة 0.3
+        plan2 = self.a.calc_materials(garment_type_id=self.types["بدلة 2 قطعة"], measurements=self.m,
+                                      style={"الزراير": "دبل (صفين)"}, fabric_material_id=self.fabric)
+        self.assertAlmostEqual({p["name"]: p["qty"] for p in plan2}["صوف كحلى"], 3.55)
+        # قماش العميل ← مفيش قماش من المخزن
+        plan3 = self.a.calc_materials(garment_type_id=self.types["بدلة 2 قطعة"], measurements=self.m,
+                                      fabric_source="customer", fabric_material_id=self.fabric)
+        self.assertNotIn("صوف كحلى", {p["name"] for p in plan3})
+
+        oid = self.a.add_order(customer_name="كريم", mobile="011", price=9000, garment_type_id=self.types["بدلة 2 قطعة"],
+                               quantity=2, measurements=self.m, fabric_material_id=self.fabric)
+        fabric = [m for m in self.a.materials() if m["id"] == self.fabric][0]
+        self.assertEqual(fabric["reserved"], 6.5)
+        self.assertEqual(fabric["available"], 3.5)
+        self.assertEqual(fabric["qty"], 10)                  # لسه متخصمش
+        o = self.a.order_detail(order_id=oid)
+        self.assertEqual({p["name"]: p["qty"] for p in o["materials_plan"]}["صوف كحلى"], 6.5)
+        # تعديل الطلب قبل القص ← الحجز بيتحسب تانى
+        self.a.update_order(order_id=oid, quantity=1)
+        self.assertEqual([m for m in self.a.materials() if m["id"] == self.fabric][0]["reserved"], 3.25)
+        self.a.confirm_deposit(order_id=oid)
+        used = [{"material_id": p["material_id"], "qty": p["qty"]} for p in self.a.order_detail(order_id=oid)
+                ["materials_plan"] if p["material_id"] in (self.fabric, self.mats["بطانة"])]
+        self.a.finish_cutting(order_id=oid, materials=used)
+        fabric = [m for m in self.a.materials() if m["id"] == self.fabric][0]
+        self.assertEqual((fabric["qty"], fabric["reserved"]), (6.75, 0))     # اتخصم والحجز اتفك
+
+    def test_missing_measure_uses_fallback(self):
+        plan = self.a.calc_materials(garment_type_id=self.types["جاكيت"], measurements={},
+                                     fabric_material_id=self.fabric)
+        p = [x for x in plan if x["name"] == "صوف كحلى"][0]
+        self.assertEqual(p["qty"], 1.9)
+        self.assertIn("ناقص", p["note"])
+
+    def test_edit_formulas(self):
+        t = self.types["بنطلون"]
+        line = self.a.save_bom_line(garment_type_id=t, is_fabric=True, formula="[بنطلون الطول] ÷ 100 + 0.5",
+                                    fallback_qty=1.5, sort=0)
+        with self.assertRaisesRegex(AppError, "مش موجود"):
+            self.a.save_bom_line(garment_type_id=t, is_fabric=True, formula="[بنطلون الوزن] + 1")
+        with self.assertRaisesRegex(AppError, "غلط"):
+            self.a.save_bom_line(garment_type_id=t, is_fabric=True, formula="(1 +")
+        self.assertEqual(self.a.test_formula(formula="[بنطلون الطول] ÷ 100 + 0.5",
+                                             measurements={"بنطلون|الطول": "100"}), {"ok": True, "qty": 1.5})
+        self.assertFalse(self.a.test_formula(formula="[بنطلون الطول]")["ok"])
+        for b in self.a.lookups()["bom_lines"]:
+            if b["garment_type_id"] == t and b["id"] != line and b["is_fabric"]:
+                self.a.delete_bom_line(line_id=b["id"])
+        plan = self.a.calc_materials(garment_type_id=t, measurements={"بنطلون|الطول": "100"},
+                                     fabric_material_id=self.fabric)
+        self.assertEqual({p["name"]: p["qty"] for p in plan}["صوف كحلى"], 1.5)
+
+
+class MigrationTests(unittest.TestCase):
+    def test_old_database_upgrades(self):
+        """قاعدة بيانات من الإصدار 1 (قبل المعادلات) بتتحدّث من غير ما البيانات تضيع."""
+        import sqlite3
+        svc, a = new_company()
+        oid = a.add_order(customer_name="قديم", mobile="1", price=100)
+        path = svc.db_path
+        svc.close()
+        conn = sqlite3.connect(path)
+        conn.execute("drop table bom_lines")
+        conn.execute("alter table orders drop column materials_plan")
+        conn.execute("alter table orders drop column fabric_material_id")
+        conn.execute("delete from meta where key = 'bom_seeded'")
+        conn.execute("update meta set value = '1' where key = 'schema_version'")
+        conn.commit()
+        conn.close()
+        svc2 = Service(os.path.dirname(path), "test")
+        a2 = login(svc2, "admin", "1234")
+        self.assertEqual(a2.order_detail(order_id=oid)["customer_name"], "قديم")
+        self.assertTrue(a2.lookups()["bom_lines"])
+        self.assertEqual(svc2._meta("schema_version"), "2")
 
 
 class BackupTests(unittest.TestCase):

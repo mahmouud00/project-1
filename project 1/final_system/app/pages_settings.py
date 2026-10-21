@@ -12,14 +12,14 @@ pages_settings.py
 from datetime import datetime
 
 from PySide6.QtGui import QGuiApplication
-from PySide6.QtWidgets import (QCheckBox, QDialog, QFileDialog, QGridLayout, QLineEdit, QPlainTextEdit, QScrollArea,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QFileDialog, QGridLayout, QGroupBox, QLineEdit,
+                               QPlainTextEdit, QScrollArea, QVBoxLayout, QWidget)
 
 import autostart
 import local_config
 import qt_widgets as ui
 from app_info import SELLER_NAME, SELLER_PHONE
-from qt_widgets import ScrollPage, DataTable, Box, amount_text, money, GREEN, RED, AMBER, NAVY, PURPLE, TEAL, BLUE
+from qt_widgets import ScrollPage, DataTable, Box, MeasurementsEditor, amount_text, money, GREEN, RED, AMBER, NAVY, PURPLE, TEAL, BLUE
 from models import (PAGES, CHANNEL_LABELS, DEPT_ROLES, STAGE_LABELS, AppError, datetime_display, iso_date,
                     iso_to_display, num, parse_amount)
 
@@ -75,7 +75,8 @@ LISTS = {
                       lambda r: [r["name"], "، ".join(str(r.get("choices") or "").splitlines()),
                                  YES if r.get("is_active") else NO],
                       lambda r: [{"key": "name", "label": "الاسم * (مثال: الياقة)", "default": r.get("name", "")},
-                                 {"key": "choices", "label": "الاختيارات (كل اختيار فى سطر)", "type": "text",
+                                 {"key": "choices", "label": "الاختيارات (كل اختيار فى سطر — ولو بياخد قماش زيادة "
+                                                             "اكتب جنبه = +0.3 مثلاً)", "type": "text",
                                   "default": r.get("choices", "")},
                                  {"key": "sort", "label": "الترتيب", "default": str(r.get("sort", 0))},
                                  {"key": "is_active", "label": "شغّال", "type": "check",
@@ -222,6 +223,29 @@ class SettingsPage(ScrollPage):
         page.addWidget(t)
         page.addWidget(ui.muted("لما العامل يخلّص مرحلة، أجره = سعر القطعة × عدد القطع فى الطلب، وبيتسجل فى كشف "
                                 "الأجور أوتوماتيك."))
+
+        # ---------- تركيبة الخامات (المعادلات) ----------
+        btns = [ui.button("➕ إضافة", "green", lambda: BomDialog(self)),
+                ui.button("✏️ تعديل", "blue", self._edit_bom),
+                ui.button("🗑️ مسح", "red", self._delete_bom)] if writable else []
+        page.addLayout(ui.hbox(ui.section_title("🧮 تركيبة الخامات (المعادلات)"), None, *btns))
+        page.addWidget(ui.muted("لكل نوع شغل: الخامات وكميتها للقطعة الواحدة (رقم أو معادلة بالمقاسات). البرنامج بيحسبها "
+                                "لوحده فى الطلب ويحجزها من المخزن، وبتتخصم عند القص. لو مقاس من المعادلة مش متسجل "
+                                "بتتحسب «الكمية لو المقاسات ناقصة»."))
+        types = {g["id"]: g["name"] for g in lookups.get("garment_types", [])}
+        self._bom = {b["id"]: b for b in lookups.get("bom_lines", [])}
+        self._bom_table = DataTable([("النوع", "text"), ("الخامة", "text"), ("الكمية للقطعة (المعادلة)", "wide"),
+                                     ("لو المقاسات ناقصة", "qty"), ("شغّال", "text")], min_height=220)
+        self._bom_table.set_rows([{
+            "key": b["id"], "color": None if b["is_active"] else ui.GRAY,
+            "values": [types.get(b["garment_type_id"], "—"),
+                       "🧵 القماش اللى اتختار فى الطلب" if b["is_fabric"] else b.get("material_name"),
+                       b["formula"], b["fallback_qty"], YES if b["is_active"] else NO]}
+            for b in self._bom.values()])
+        if writable:
+            self._bom_table.cellDoubleClicked.connect(lambda r, c: self._edit_bom())
+        page.addWidget(self._bom_table)
+
         page.addLayout(ui.hbox(None, ui.button("📜 سجل النشاط (مين عمل إيه)", "light", lambda: ActivityDialog(self))))
         page.addStretch(1)
 
@@ -399,6 +423,17 @@ class SettingsPage(ScrollPage):
     def _edit_rates(self):
         RatesDialog(self)
 
+    def _edit_bom(self):
+        b = self.selected(self._bom_table, self._bom, "اختار سطر من جدول تركيبة الخامات")
+        if b:
+            BomDialog(self, b)
+
+    def _delete_bom(self):
+        b = self.selected(self._bom_table, self._bom, "اختار سطر من جدول تركيبة الخامات")
+        if b and ui.ask_yes_no(self, "تمسح السطر ده من التركيبة؟ (الطلبات القديمة مش بتتأثر)"):
+            self.run_action(lambda: self.backend.delete_bom_line(line_id=b["id"]),
+                            then=lambda _r: self.app.reload_lookups())
+
 
 class PermissionsDialog(QDialog):
     """مستخدم جديد أو صلاحيات مستخدم: لكل صفحة (يشوف / يضيف ويعدّل / يمسح) + مدير."""
@@ -495,6 +530,106 @@ class PermissionsDialog(QDialog):
             self._msg.setText(f"❌ {e}")
 
         self._app.worker.run(action, ok, fail)
+
+
+class BomDialog(QDialog):
+    """سطر فى تركيبة الخامات: النوع + الخامة + المعادلة، مع زرار يضيف اسم مقاس وتجربة المعادلة."""
+
+    FUNCS = [("تقريب لأقرب ربع", "تقريب(…، 0.25)"), ("لو (شرط)", "لو([جاكيت الصدر] > 110، 0.25، 0)"),
+             ("أكبر", "أكبر(…، …)"), ("أصغر", "أصغر(…، …)")]
+
+    def __init__(self, page, line=None):
+        super().__init__(page)
+        self._page = page
+        self._line = line or {}
+        app = page.app
+        lk = app.lookups
+        self.setWindowTitle("✏️ سطر فى التركيبة" if line else "➕ سطر جديد فى التركيبة")
+        self.resize(760, 640)
+        lay = QVBoxLayout(self)
+        lay.addWidget(ui.label(self.windowTitle(), "dialogTitle"))
+        grid = QGridLayout()
+        self._type = QComboBox()
+        ui.fill_combo(self._type, [(g["name"], g["id"]) for g in lk.get("garment_types", [])],
+                      self._line.get("garment_type_id"))
+        self._material = ui.searchable(QComboBox())
+        ui.fill_combo(self._material, [("🧵 القماش اللى اتختار فى الطلب", "fabric")] + [
+            (f"{m['name']} ({m['unit']})", m["id"]) for m in lk.get("materials", []) if m["is_active"]],
+            "fabric" if self._line.get("is_fabric", line is None) else self._line.get("material_id"))
+        self._fallback = QLineEdit(amount_text(self._line.get("fallback_qty", 0)))
+        self._sort = QLineEdit(str(self._line.get("sort", 0)))
+        self._active = QCheckBox("شغّال")
+        self._active.setChecked(bool(self._line.get("is_active", True)))
+        for r, (title, w) in enumerate((("النوع", self._type), ("الخامة", self._material),
+                                        ("الكمية لو المقاسات ناقصة", self._fallback), ("الترتيب", self._sort))):
+            grid.addWidget(ui.label(title), r, 0)
+            grid.addWidget(w, r, 1)
+        grid.addWidget(self._active, 4, 1)
+        lay.addLayout(grid)
+
+        lay.addWidget(ui.label("الكمية للقطعة الواحدة (رقم زى 1.5 أو معادلة):", "boxTitle"))
+        self._formula = QPlainTextEdit(self._line.get("formula", ""))
+        self._formula.setMaximumHeight(90)
+        self._formula.setPlaceholderText("مثال: تقريب(([جاكيت الطول] + [جاكيت طول الكم]) ÷ 100 + 0.35، 0.25)")
+        lay.addWidget(self._formula)
+        self._measure_pick = ui.searchable(QComboBox())
+        fields = [f for f in lk.get("measure_fields", []) if f["is_active"]]
+        ui.fill_combo(self._measure_pick, [("➕ ضيف مقاس للمعادلة…", None)] + [
+            (f"{f['grp']} — {f['name']}", f"[{f['grp']} {f['name']}]") for f in fields])
+        self._measure_pick.activated.connect(self._insert_measure)
+        func_btns = [ui.button(title, "light", lambda t=text: self._formula.insertPlainText(t))
+                     for title, text in self.FUNCS]
+        lay.addLayout(ui.hbox(self._measure_pick, *func_btns))
+        lay.addWidget(ui.muted("المقاسات بالسنتيمتر زى ما بتتكتب فى الطلب، فالقسمة على 100 بتحوّلها متر. "
+                               "÷ × + − والأقواس، و«تقريب(القيمة، 0.25)» بيقرّب لفوق لأقرب ربع متر. "
+                               "الناتج بيتضرب فى عدد القطع فى الطلب أوتوماتيك."))
+
+        test = QGroupBox("🧪 جرّب المعادلة بمقاسات")
+        tl = QVBoxLayout(test)
+        self._sample = MeasurementsEditor(fields, {})
+        tl.addWidget(self._sample)
+        self._result = ui.label("", "boxTitle")
+        tl.addLayout(ui.hbox(ui.button("🧪 احسب", "teal", self._test), self._result))
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(test)
+        lay.addWidget(scroll, 1)
+
+        self._btn = ui.button("💾 حفظ", "green", self._save)
+        self._msg = ui.label("", "errorMsg", wrap=True)
+        lay.addLayout(ui.hbox(self._btn, self._msg))
+        self.setModal(True)
+        self.show()
+
+    def _insert_measure(self, _index):
+        value = ui.combo_value(self._measure_pick)
+        if isinstance(value, str) and value.startswith("["):
+            self._formula.insertPlainText(value)
+        self._measure_pick.setCurrentIndex(0)
+
+    def _test(self):
+        formula, sample = self._formula.toPlainText(), self._sample.get()
+        self._page.app.worker.run(
+            lambda: self._page.backend.test_formula(formula=formula, measurements=sample),
+            lambda r: self._result.setText(f"✔ النتيجة: {ui.qty(r['qty'])} للقطعة" if r["ok"] else f"❌ {r['error']}"),
+            lambda e: self._result.setText(f"❌ {e}"))
+
+    def _save(self):
+        material = ui.combo_value(self._material)
+        try:
+            args = dict(garment_type_id=ui.combo_value(self._type), formula=self._formula.toPlainText(),
+                        is_fabric=material == "fabric", material_id=material if isinstance(material, int) else None,
+                        fallback_qty=parse_amount(self._fallback.text(), "الكمية الافتراضية", allow_zero=True),
+                        sort=int(parse_amount(self._sort.text() or "0", "الترتيب", allow_zero=True)),
+                        is_active=self._active.isChecked(), line_id=self._line.get("id"))
+        except AppError as e:
+            self._msg.setText(f"❌ {e}")
+            return
+        self._btn.setEnabled(False)
+        app = self._page.app
+        app.worker.run(lambda: self._page.backend.save_bom_line(**args),
+                       lambda _r: (self.accept(), app.reload_lookups(), app.after_change()),
+                       lambda e: (self._msg.setText(f"❌ {e}"), self._btn.setEnabled(True)))
 
 
 class RatesDialog(QDialog):
