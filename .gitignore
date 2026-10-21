@@ -1,0 +1,10 @@
+.venv/
+venv/
+.idea/
+__pycache__/
+*.pyc
+build/
+dist/
+*.exe
+.env
+*certificate*.jpg

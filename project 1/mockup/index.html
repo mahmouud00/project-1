@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نظام إدارة مصانع ومحلات البدل - Odoo Style ERP</title>
+    <style>
+        :root {
+            --primary-color: #714B67;
+            --primary-hover: #5c3b53;
+            --bg-color: #f8f9fa;
+            --card-bg: #ffffff;
+            --text-color: #212529;
+            --border-color: #dee2e6;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Top Navbar */
+        .navbar {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 12px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .navbar h1 {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .user-info {
+            font-size: 14px;
+        }
+
+        /* Container */
+        .container {
+            padding: 30px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* App Switcher Grid */
+        .section-title {
+            font-size: 22px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            color: #343a40;
+        }
+
+        .apps-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .app-card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 25px 15px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.02);
+        }
+
+        .app-card:hover {
+            transform: translateY(-5px);
+            border-color: var(--primary-color);
+            box-shadow: 0 6px 15px rgba(113, 75, 103, 0.15);
+        }
+
+        .app-icon {
+            font-size: 40px;
+            margin-bottom: 15px;
+        }
+
+        .app-name {
+            font-size: 15px;
+            font-weight: bold;
+            color: #495057;
+        }
+
+        /* Kanban View (Hidden by default) */
+        #kanban-view {
+            display: none;
+        }
+
+        .kanban-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .back-btn {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .back-btn:hover {
+            background-color: var(--primary-hover);
+        }
+
+        .kanban-board {
+            display: flex;
+            gap: 15px;
+            overflow-x: auto;
+            padding-bottom: 15px;
+        }
+
+        .kanban-column {
+            background-color: #ffffff;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            min-width: 250px;
+            flex: 1;
+            padding: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        }
+
+        .kanban-column h3 {
+            font-size: 15px;
+            color: var(--primary-color);
+            margin-top: 0;
+            margin-bottom: 15px;
+            border-bottom: 2px solid var(--bg-color);
+            padding-bottom: 8px;
+        }
+
+        .kanban-card {
+            background-color: #f8f9fa;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 10px;
+            font-size: 13px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            cursor: grab;
+        }
+
+        .kanban-card:hover {
+            border-color: var(--primary-color);
+        }
+
+        .tag {
+            display: inline-block;
+            background-color: #e9ecef;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            margin-top: 6px;
+            color: #495057;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Top Navbar -->
+    <div class="navbar">
+        <h1>نظام إدارة مصانع ومحلات البدل (ERP)</h1>
+        <div class="user-info">مدير النظام (الفرع الرئيسي)</div>
+    </div>
+
+    <div class="container">
+        <!-- Apps Switcher View -->
+        <div id="apps-view">
+            <div class="section-title">لوحة التطبيقات الرئيسية</div>
+            <div class="apps-grid">
+                <div class="app-card" onclick="openKanban()">
+                    <div class="app-icon">✂️</div>
+                    <div class="app-name">التصنيع وأوامر التشغيل</div>
+                </div>
+                <div class="app-card" onclick="alert('فتح قسم المخازن والخامات')">
+                    <div class="app-icon">📦</div>
+                    <div class="app-name">المخازن والخامات</div>
+                </div>
+                <div class="app-card" onclick="alert('فتح قسم المبيعات وعروض الأسعار')">
+                    <div class="app-icon">🧾</div>
+                    <div class="app-name">المبيعات وعروض الأسعار</div>
+                </div>
+                <div class="app-card" onclick="alert('فتح قسم العملاء والمقاسات')">
+                    <div class="app-icon">👔</div>
+                    <div class="app-name">العملاء والمقاسات (CRM)</div>
+                </div>
+                <div class="app-card" onclick="alert('فتح قسم الحسابات والخزينة')">
+                    <div class="app-icon">💰</div>
+                    <div class="app-name">الحسابات والخزينة</div>
+                </div>
+                <div class="app-card" onclick="alert('فتح قسم شؤون العاملين والمرتبات')">
+                    <div class="app-icon">👥</div>
+                    <div class="app-name">شؤون العاملين (HR)</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Kanban View -->
+        <div id="kanban-view">
+            <div class="kanban-header">
+                <button class="back-btn" onclick="closeKanban()">← عودة للقائمة الرئيسية</button>
+                <div style="font-weight: bold; font-size: 18px;">متابعة خطوط الإنتاج وأوامر التشغيل</div>
+            </div>
+
+            <div class="kanban-board">
+                <div class="kanban-column">
+                    <h3>قيد الانتظار (2)</h3>
+                    <div class="kanban-card">
+                        <b>طلب #101 - بدلة كحلي رسمية</b><br>
+                        العميل: أحمد محمد<br>
+                        <span class="tag">تفصيل خاص</span>
+                    </div>
+                    <div class="kanban-card">
+                        <b>طلب #102 - بليزر كتان بيج</b><br>
+                        العميل: محمود حسن<br>
+                        <span class="tag">جاهز</span>
+                    </div>
+                </div>
+
+                <div class="kanban-column">
+                    <h3>مرحلة القص (1)</h3>
+                    <div class="kanban-card">
+                        <b>طلب #100 - بدلة سهرة أسود</b><br>
+                        العميل: إبراهيم علي<br>
+                        <span class="tag">استهلاك 3.2 متر</span>
+                    </div>
+                </div>
+
+                <div class="kanban-column">
+                    <h3>الخياطة والتجميع (1)</h3>
+                    <div class="kanban-card">
+                        <b>طلب #099 - بدلة رمادي فاتح</b><br>
+                        العميل: خالد عبد الله<br>
+                        <span class="tag">ترزي: عم عماد</span>
+                    </div>
+                </div>
+
+                <div class="kanban-column">
+                    <h3>التشطيب والجودة (1)</h3>
+                    <div class="kanban-card">
+                        <b>طلب #098 - بدلة كلاسيك كحلي</b><br>
+                        العميل: سامح عادل<br>
+                        <span class="tag">فحص نهائي</span>
+                    </div>
+                </div>
+
+                <div class="kanban-column">
+                    <h3>مكتمل وجاهز (2)</h3>
+                    <div class="kanban-card" style="border-right: 4px solid #28a745;">
+                        <b>طلب #097 - بدلة زفاف أبيض</b><br>
+                        العميل: مصطفى محمود<br>
+                        <span class="tag" style="background-color: #d4edda; color: #155724;">تم التسليم</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function openKanban() {
+            document.getElementById('apps-view').style.display = 'none';
+            document.getElementById('kanban-view').style.display = 'block';
+        }
+
+        function closeKanban() {
+            document.getElementById('kanban-view').style.display = 'none';
+            document.getElementById('apps-view').style.display = 'block';
+        }
+    </script>
+</body>
+</html>

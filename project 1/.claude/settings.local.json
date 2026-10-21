@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(pip install PySide6)",
+      "PowerShell(python \"frontend/odoo_style_prototype.py\")",
+      "PowerShell(python frontend/main.py)",
+      "PowerShell(python run_all.py)",
+      "PowerShell(pip install -r backend/requirements.txt)"
+    ]
+  }
+}
