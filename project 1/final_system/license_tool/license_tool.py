@@ -66,6 +66,17 @@ class LicenseTool(QWidget):
         self.users.setValue(5)
         self.start = QLineEdit(date.today().strftime("%d/%m/%Y"))
         self.start.textChanged.connect(self._update_expiry)
+        # التجديد قبل الانتهاء: بإيدك بس (مش أوتوماتيك)، وعمره ما بيكمّل بعد فترة التجربة
+        self.chain = QPushButton("")
+        self.chain.setVisible(False)
+        self.chain.clicked.connect(lambda: self.start.setText(self._chain_date.strftime("%d/%m/%Y")))
+        today_btn = QPushButton("📅 من النهارده")
+        today_btn.clicked.connect(lambda: self.start.setText(date.today().strftime("%d/%m/%Y")))
+        start_row = QHBoxLayout()
+        start_row.addWidget(self.start, 1)
+        start_row.addWidget(today_btn)
+        start_row.addWidget(self.chain)
+        self._chain_date = None
         self.trial = QSpinBox()
         self.trial.setRange(1, 90)
         self.trial.setValue(14)
@@ -78,7 +89,7 @@ class LicenseTool(QWidget):
         form.addRow("", self.history)
         form.addRow("الباقة", self.plan)
         form.addRow("عدد المستخدمين", self.users)
-        form.addRow("يبدأ من", self.start)
+        form.addRow("يبدأ من", start_row)
         form.addRow("أيام التجربة (لباقة التجربة بس)", self.trial)
         form.addRow("ينتهى", self.expiry)
         form.addRow("ملاحظات (المبلغ، طريقة الدفع...)", self.notes)
@@ -138,21 +149,26 @@ class LicenseTool(QWidget):
         except licensing.LicenseError:
             self.history.setText("")
             return
+        self.chain.setVisible(False)
+        self._chain_date = None
         old = [r for r in self._rows() if len(r) > 7 and r[3] == machine]
         if not old:
             self.history.setText("جهاز جديد — أول ترخيص")
             return
         last = old[-1]
-        self.history.setText(f"آخر ترخيص للجهاز ده: {last[4]} — {last[5]} مستخدم — ينتهى {last[7]} ({last[1]})")
+        self.history.setText(f"آخر كود اتعمل للجهاز ده: {last[4]} — {last[5]} مستخدم — ينتهى {last[7]} ({last[1]})")
         if not self.customer.text():
             self.customer.setText(last[1])
             self.mobile.setText(last[2])
-        try:   # التجديد قبل الانتهاء: يبدأ من آخر يوم فى الترخيص القديم عشان العميل ميخسرش أيام
+        try:
             last_end = datetime.strptime(last[7], "%Y-%m-%d").date()
-            if last_end > date.today():
-                self.start.setText(last_end.strftime("%d/%m/%Y"))
         except ValueError:
-            pass
+            return
+        # لو العميل بيجدد بدرى (والقديم مش تجربة)، زرار يخلّى الجديد يبدأ من يوم انتهاء القديم عشان ميخسرش أيام
+        if last_end > date.today() and last[4] != licensing.PLANS[4]:
+            self._chain_date = last_end
+            self.chain.setText(f"⏩ يبدأ بعد انتهاء الحالى ({last_end.strftime('%d/%m/%Y')})")
+            self.chain.setVisible(True)
 
     def _update_expiry(self):
         try:
@@ -164,6 +180,17 @@ class LicenseTool(QWidget):
     def _make(self):
         try:
             start = parse_date(self.start.text())
+            exp = licensing.plan_expiry(self.plan.currentData(), start, self.trial.value())
+            licensing.parse_machine(self.machine.text())
+        except (ValueError, licensing.LicenseError) as e:
+            QMessageBox.critical(self, "خطأ", str(e))
+            return
+        summary = (f"الباقة: {licensing.PLANS[self.plan.currentData()]} — {self.users.value()} مستخدم\n"
+                   f"من {start.strftime('%d/%m/%Y')} لحد " + (exp.strftime('%d/%m/%Y') if exp else "مدى الحياة")
+                   + "\n\nالكود الجديد بيلغى أى كود قبله على نفس الجهاز. أعمله؟")
+        if QMessageBox.question(self, "تأكيد", summary) != QMessageBox.Yes:
+            return
+        try:
             code, expires, serial = license_core.make_code(self.key, self.machine.text(), self.plan.currentData(),
                                                            self.users.value(), start, self.trial.value())
         except (ValueError, licensing.LicenseError) as e:
