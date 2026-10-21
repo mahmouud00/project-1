@@ -4,23 +4,22 @@ license_tool.py — أداة التراخيص (عندك إنت بس، مش بت�
 العميل يبعتلك "كود الجهاز" ← تختار الباقة وعدد المستخدمين ← الأداة تطلّع "كود التفعيل"
 وتسجّله فى licenses_log.csv (سجل بكل التراخيص اللى طلعت).
 
-التشغيل (من فولدر final_system، والـ venv متفعّل):
-    python license_tool/license_tool.py
-أول مرة بس قبلها:  python license_tool/keygen.py
+التشغيل: دبل كليك على SUITES-License-Tool.exe (أو: python license_tool/license_tool.py)
+أول مرة بيسألك على مكان ملف المفتاح السرى seller_private_key.pem وبيفتكره.
 """
 
 import os
 import sys
 from datetime import date, datetime
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, HERE)
+if not getattr(sys, "frozen", False):
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from PySide6.QtCore import Qt  # noqa: E402
-from PySide6.QtGui import QGuiApplication  # noqa: E402
-from PySide6.QtWidgets import (QApplication, QComboBox, QFormLayout, QHBoxLayout, QHeaderView, QLabel,  # noqa: E402
-                               QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox, QTableWidget,
-                               QTableWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtCore import QSettings, Qt  # noqa: E402
+from PySide6.QtGui import QGuiApplication, QIcon  # noqa: E402
+from PySide6.QtWidgets import (QApplication, QComboBox, QFileDialog, QFormLayout, QHBoxLayout,  # noqa: E402
+                               QHeaderView, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox,
+                               QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 import license_core  # noqa: E402
 from license_core import licensing  # noqa: E402
@@ -36,17 +35,31 @@ def parse_date(text):
     raise ValueError("التاريخ لازم يكون كده: 25/12/2026")
 
 
+SETTINGS = ("MYTECH", "SuitesLicenseTool")
+
+
+def find_key(parent=None, ask=False):
+    """مكان المفتاح السرى: جنب الأداة، أو آخر مكان اتختار، أو بيسأل."""
+    saved = QSettings(*SETTINGS).value("key_path", "")
+    for path in ([] if ask else [license_core.PRIVATE_KEY_PATH, saved]):
+        if path and os.path.isfile(path):
+            return path
+    QMessageBox.information(parent, "المفتاح السرى",
+                            "اختار ملف المفتاح السرى seller_private_key.pem\n"
+                            "(اللى اتعمل بـ keygen — غالبًا فى فولدر license_tool أو على الفلاشة).\n\n"
+                            "الأداة هتفتكر مكانه، وسجل التراخيص هيتحفظ جنبه.")
+    path, _ = QFileDialog.getOpenFileName(parent, "اختار seller_private_key.pem", os.path.dirname(saved or ""),
+                                          "المفتاح السرى (*.pem)")
+    return path or None
+
+
 class LicenseTool(QWidget):
-    def __init__(self):
+    def __init__(self, key_path=None):
         super().__init__()
-        self.setWindowTitle("🔑 أداة التراخيص — Tailor Master")
+        self.setWindowTitle("🔑 أداة التراخيص — SUITES")
         self.resize(1100, 760)
         self.setLayoutDirection(Qt.RightToLeft)
-        try:
-            self.key = license_core.load_private_key()
-        except FileNotFoundError as e:
-            QMessageBox.critical(self, "مفيش مفتاح", str(e))
-            raise SystemExit(1)
+        self._load_key(key_path or license_core.PRIVATE_KEY_PATH)
 
         lay = QVBoxLayout(self)
         form = QFormLayout()
@@ -129,7 +142,35 @@ class LicenseTool(QWidget):
         self._update_expiry()
         self._fill_log()
 
+        footer = QHBoxLayout()
+        self.key_label = QLabel(f"🔐 المفتاح: {license_core.PRIVATE_KEY_PATH}  —  السجل: {license_core.LOG_PATH}")
+        self.key_label.setStyleSheet("color: #777;")
+        change = QPushButton("تغيير مكان المفتاح")
+        change.clicked.connect(self._change_key)
+        footer.addWidget(self.key_label, 1)
+        footer.addWidget(change)
+        lay.addLayout(footer)
+
     # ---------- ---------- ----------
+
+    def _load_key(self, path):
+        try:
+            self.key = license_core.load_private_key(path)
+        except FileNotFoundError as e:
+            QMessageBox.critical(self, "مفيش مفتاح", str(e))
+            raise SystemExit(1)
+        except Exception:  # noqa: BLE001 - ملف تانى مش المفتاح
+            QMessageBox.critical(self, "خطأ", "الملف ده مش مفتاح تراخيص صالح")
+            raise SystemExit(1)
+        license_core.use_key_file(path)
+        QSettings(*SETTINGS).setValue("key_path", path)
+
+    def _change_key(self):
+        path = find_key(self, ask=True)
+        if path:
+            self._load_key(path)
+            self.key_label.setText(f"🔐 المفتاح: {license_core.PRIVATE_KEY_PATH}  —  السجل: {license_core.LOG_PATH}")
+            self._fill_log()
 
     def _rows(self):
         return license_core.read_log()
@@ -215,10 +256,40 @@ class LicenseTool(QWidget):
         QGuiApplication.clipboard().setText(msg)
 
 
+def selftest():
+    """للـ build: بيتأكد إن الأداة بتعمل كود والبرنامج بيقبله (بمفتاح تجربة مؤقت)."""
+    import tempfile
+    import traceback
+    out = os.path.join(tempfile.gettempdir(), "suites_license_tool_selftest.txt")
+    try:
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        key = Ed25519PrivateKey.generate()
+        licensing.PUBLIC_KEY_HEX = key.public_key().public_bytes(serialization.Encoding.Raw,
+                                                                 serialization.PublicFormat.Raw).hex()
+        machine = "ABCD-1234-EF56-7890"
+        code, _exp, _serial = license_core.make_code(key, machine, 3, 5)
+        lic = licensing.verify(code, licensing.parse_machine(machine))
+        result, rc = f"OK users={lic.users} plan={lic.plan_label}", 0
+    except Exception:  # noqa: BLE001
+        result, rc = "FAIL\n" + traceback.format_exc(), 1
+    with open(out, "w", encoding="utf-8") as f:
+        f.write(result)
+    return rc
+
+
 def main():
+    if "--selftest" in sys.argv:
+        return selftest()
     app = QApplication.instance() or QApplication(sys.argv)
     app.setLayoutDirection(Qt.RightToLeft)
-    w = LicenseTool()
+    icon = os.path.join(getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))), "app.ico")
+    if os.path.exists(icon):
+        app.setWindowIcon(QIcon(icon))
+    path = find_key()
+    if not path:
+        return 0
+    w = LicenseTool(path)
     w.show()
     return app.exec()
 

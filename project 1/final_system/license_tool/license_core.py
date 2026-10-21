@@ -11,21 +11,32 @@ import secrets
 import sys
 from datetime import date, datetime
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+FROZEN = getattr(sys, "frozen", False)
+# من exe: الفولدر اللى فيه الـ exe. من بايثون: فولدر license_tool
+HERE = os.path.dirname(sys.executable) if FROZEN else os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.join(os.path.dirname(HERE), "app")
-if APP_DIR not in sys.path:
+if not FROZEN and APP_DIR not in sys.path:
     sys.path.insert(0, APP_DIR)
 
 from server import licensing  # noqa: E402
 
-PRIVATE_KEY_PATH = os.path.join(HERE, "seller_private_key.pem")
+KEY_NAME = "seller_private_key.pem"
+PRIVATE_KEY_PATH = os.path.join(HERE, KEY_NAME)
 LOG_PATH = os.path.join(HERE, "licenses_log.csv")
+
+
+def use_key_file(path):
+    """المفتاح السرى ممكن يكون فى أى فولدر: سجل التراخيص بيتحفظ جنبه."""
+    global PRIVATE_KEY_PATH, LOG_PATH
+    PRIVATE_KEY_PATH = path
+    LOG_PATH = os.path.join(os.path.dirname(path), "licenses_log.csv")
 LOG_HEADER = ["التاريخ", "العميل", "الموبايل", "كود الجهاز", "الباقة", "المستخدمين", "يبدأ", "ينتهى",
               "المسلسل", "كود التفعيل", "ملاحظات"]
 
 
-def load_private_key(path=PRIVATE_KEY_PATH):
+def load_private_key(path=None):
     from cryptography.hazmat.primitives import serialization
+    path = path or PRIVATE_KEY_PATH
     if not os.path.exists(path):
         raise FileNotFoundError("مفيش مفتاح سرى — شغّل keygen.py الأول (مرة واحدة بس)")
     with open(path, "rb") as f:
