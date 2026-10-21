@@ -1,4 +1,4 @@
 # المفتاح العام بتاع التراخيص.
 # license_tool/keygen.py بيكتبه هنا أوتوماتيك أول مرة (مرة واحدة بس فى العمر).
 # ⚠️ متغيّروش بعد ما تبيع: كل التراخيص اللى طلعت قبل كده هتبطل.
-PUBLIC_KEY_HEX = "PUT-YOUR-PUBLIC-KEY-HERE"
+PUBLIC_KEY_HEX = "1ae4f7b74168a3c1e169effe7fe5b8a152528c8d9361e5f05fb8398adf4f89f1"
