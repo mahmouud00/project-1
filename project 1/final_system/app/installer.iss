@@ -9,8 +9,8 @@
 #ifndef SourceDir
   #define SourceDir "build_nuitka\main.dist"
 #endif
-#define MyAppName "Tailor Master"
-#define MyAppExeName "TailorMaster.exe"
+#define MyAppName "SUITES"
+#define MyAppExeName "SUITES.exe"
 
 [Setup]
 ; ⚠️ متغيّرش AppId أبدًا: هو اللى بيخلّى النسخة الجديدة تتثبت فوق القديمة
@@ -18,14 +18,14 @@ AppId={{795C76A3-41A5-4B19-8877-FC330AA5E26C}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
-AppPublisher=Tailor Master
-DefaultDirName={autopf}\Tailor Master
+AppPublisher=MYTECH Solutions
+DefaultDirName={autopf}\SUITES
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 ; بيتثبت للمستخدم الحالى من غير ما يطلب صلاحيات Administrator
 PrivilegesRequired=lowest
 OutputDir=installer_output
-OutputBaseFilename=TailorMaster_Setup_{#MyAppVersion}
+OutputBaseFilename=SUITES_Setup_{#MyAppVersion}
 SetupIconFile=assets\app.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 UninstallDisplayName={#MyAppName}

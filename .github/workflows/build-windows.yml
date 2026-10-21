@@ -1,4 +1,4 @@
-# بيبنى ملف الـ Setup بتاع Tailor Master على ويندوز أوتوماتيك مع كل رفع للكود.
+# بيبنى ملف الـ Setup بتاع SUITES على ويندوز أوتوماتيك مع كل رفع للكود.
 # الملف الجاهز بيتنزّل من: Actions ← آخر تشغيل ← Artifacts
 name: Build Windows installer
 
@@ -53,8 +53,8 @@ jobs:
             --windows-console-mode=disable --windows-icon-from-ico=assets\app.ico `
             --include-data-dir=assets=assets --include-package=server `
             --include-module=cryptography.hazmat.primitives.asymmetric.ed25519 `
-            --nofollow-import-to=tkinter --output-dir=build_nuitka --output-filename=TailorMaster.exe `
-            --company-name="Tailor Master" --product-name="Tailor Master" --file-description="Tailor Master" `
+            --nofollow-import-to=tkinter --output-dir=build_nuitka --output-filename=SUITES.exe `
+            --company-name="MYTECH Solutions" --product-name="SUITES" --file-description="SUITES" `
             --file-version=$env:VER --product-version=$env:VER
           "APPDIR=build_nuitka\main.dist" | Out-File -FilePath $env:GITHUB_ENV -Append
 
@@ -62,11 +62,11 @@ jobs:
         if: matrix.compiler == 'pyinstaller'
         run: |
           python -m PyInstaller tailor.spec --noconfirm --clean
-          "APPDIR=dist\TailorMaster" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "APPDIR=dist\SUITES" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Self-test the exe
         run: |
-          $p = Start-Process -FilePath "$env:APPDIR\TailorMaster.exe" -ArgumentList "--selftest" -Wait -PassThru
+          $p = Start-Process -FilePath "$env:APPDIR\SUITES.exe" -ArgumentList "--selftest" -Wait -PassThru
           Get-Content "$env:TEMP\tailormaster_selftest.txt"
           if ($p.ExitCode -ne 0) { throw "selftest failed" }
 
@@ -76,11 +76,11 @@ jobs:
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=$env:VER /DSourceDir=$env:APPDIR installer.iss
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed" }
           if ("${{ matrix.compiler }}" -eq "pyinstaller") {
-            Rename-Item "installer_output\TailorMaster_Setup_$env:VER.exe" "TailorMaster_Setup_$env:VER-quick.exe"
+            Rename-Item "installer_output\SUITES_Setup_$env:VER.exe" "SUITES_Setup_$env:VER-quick.exe"
           }
 
       - uses: actions/upload-artifact@v4
         with:
-          name: TailorMaster_Setup_${{ matrix.compiler }}
+          name: SUITES_Setup_${{ matrix.compiler }}
           path: "project 1/final_system/app/installer_output/*.exe"
           retention-days: 30

@@ -290,7 +290,7 @@ class SettingsPage(ScrollPage):
             ui.show_error(self, f"مش قادر أغيّر الإعداد ده: {e}")
 
     def _backup(self):
-        name = f"TailorMaster-backup-{datetime.now():%Y-%m-%d_%H%M}.db"
+        name = f"SUITES-backup-{datetime.now():%Y-%m-%d_%H%M}.db"
         path, _ = QFileDialog.getSaveFileName(self, "احفظ النسخة الاحتياطية فين؟", name, "نسخة احتياطية (*.db)")
         if not path:
             return

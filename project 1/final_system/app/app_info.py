@@ -2,12 +2,13 @@
 import os
 import sys
 
-APP_NAME = "Tailor Master"                 # غيّره لاسم البراند لما تختاره (وغيّره كمان فى installer.iss)
+APP_NAME = "SUITES"                 # غيّره لاسم البراند لما تختاره (وغيّره كمان فى installer.iss)
 APP_SUBTITLE = "نظام إدارة مصانع البدل"
 APP_VERSION = "1.0.0"
 # بياناتك إنت (اللى بتبيع البرنامج): بتظهر للعميل فى شاشة التفعيل والتجديد
-SELLER_NAME = "Tailor Master"
-SELLER_PHONE = "01xxxxxxxxx"
+SELLER_NAME = "م. محمود — MYTECH Solutions"
+SELLER_PHONE = "01033603385"
+COMPANY = "MYTECH Solutions"
 APP_ID = "TailorMaster"                    # اسم الفولدر اللى البيانات بتتحفظ فيه — متغيّروش بعد البيع
 
 

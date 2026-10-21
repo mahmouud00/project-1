@@ -16,7 +16,7 @@ from PySide6.QtWidgets import QFrame, QLineEdit, QPlainTextEdit, QScrollArea, QV
 
 import local_config
 import qt_widgets as ui
-from app_info import APP_NAME, APP_SUBTITLE, APP_VERSION, SELLER_NAME, SELLER_PHONE, resource_path
+from app_info import APP_NAME, APP_SUBTITLE, APP_VERSION, COMPANY, SELLER_NAME, SELLER_PHONE, resource_path
 from backend import ping
 from server.api import discover
 
@@ -95,6 +95,13 @@ class CardScreen(QWidget):
         v = ui.label(f"{APP_NAME} — الإصدار {APP_VERSION}", "muted")
         v.setAlignment(Qt.AlignCenter)
         self.card.addWidget(v)
+        brand = QPixmap(resource_path("assets", "brand.png"))
+        if not brand.isNull():
+            b = ui.label()
+            b.setPixmap(brand.scaledToHeight(34, Qt.SmoothTransformation))
+            b.setAlignment(Qt.AlignCenter)
+            b.setToolTip(f"{COMPANY} — {SELLER_PHONE}")
+            self.card.addWidget(b)
 
 
 # ============================================================

@@ -1,4 +1,4 @@
-# Tailor Master — نظام إدارة مصانع البدل
+# SUITES — نظام إدارة مصانع البدل (MYTECH Solutions)
 
 برنامج ديسكتوب (ويندوز) **من غير إنترنت**: قاعدة البيانات على جهاز واحد فى المحل (السيرفر)،
 وباقى الأجهزة بتتصل بيه على شبكة المحل. بيتباع بترخيص لكل شركة: **شهر / 6 شهور / سنة / مدى الحياة**،
@@ -90,7 +90,7 @@ python -m unittest discover tests -v
    - بيحوّل الكود لـ exe متجمّع بـ **Nuitka** (أصعب بكتير فى فك الكود من PyInstaller). أول مرة بياخد 10–20 دقيقة
      وممكن ينزّل compiler لوحده.
    - لو Nuitka عمل مشكلة: `build_quick.bat` (PyInstaller، أسرع بس أسهل فى الفك).
-3. الـ Setup بيطلع فى `app\installer_output\TailorMaster_Setup_1.0.0.exe`.
+3. الـ Setup بيطلع فى `app\installer_output\SUITES_Setup_1.0.0.exe`.
 
 قبل ما تبيع:
 - اسم البرنامج واللوجو: `app\app_info.py` (`APP_NAME`) + `app\installer.iss` (`MyAppName`) + `app\assets\logo.png`

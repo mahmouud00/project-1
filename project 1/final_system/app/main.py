@@ -2,7 +2,7 @@
 main.py — تشغيل البرنامج
    python main.py          ← البرنامج العادى
    python main.py --tray   ← السيرفر بس جنب الساعة (بيتشغل كده مع ويندوز لو فعّلتها من الإعدادات)
-   TailorMaster.exe --selftest  ← بيتأكد إن الـ exe فيه كل حاجة (بيستخدمه الـ build) وبيكتب النتيجة فى ملف
+   SUITES.exe --selftest  ← بيتأكد إن الـ exe فيه كل حاجة (بيستخدمه الـ build) وبيكتب النتيجة فى ملف
 """
 
 import os

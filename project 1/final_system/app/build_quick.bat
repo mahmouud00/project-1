@@ -3,7 +3,7 @@ setlocal
 cd /d "%~dp0"
 
 echo ================================================
-echo   Tailor Master - quick build (PyInstaller)
+echo   SUITES - quick build (PyInstaller)
 echo   (faster to build, but easier to decompile than build.bat)
 echo ================================================
 
@@ -32,9 +32,9 @@ if not defined ISCC (
   echo [X] Inno Setup is not installed. Download it from https://jrsoftware.org/isdl.php
   goto :error
 )
-"%ISCC%" /DMyAppVersion=%VER% /DSourceDir=dist\TailorMaster installer.iss
+"%ISCC%" /DMyAppVersion=%VER% /DSourceDir=dist\SUITES installer.iss
 if errorlevel 1 goto :error
-echo [OK] Done! installer_output\TailorMaster_Setup_%VER%.exe
+echo [OK] Done! installer_output\SUITES_Setup_%VER%.exe
 explorer installer_output
 pause
 exit /b 0
