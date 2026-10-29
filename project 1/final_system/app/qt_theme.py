@@ -44,7 +44,28 @@ SEMANTIC = {"green": "#1f9d57", "red": "#e04848", "amber": "#b06f00", "purple": 
 MODES = [("🖥️ زى الجهاز", "system"), ("☀️ فاتح", "light"), ("🌙 داكن", "dark")]
 
 
+_CHECK_FILE = None
+
+
+def _check_icon():
+    """علامة ✓ بيضا للـ checkbox (بتتعمل مرة واحدة فى فولدر مؤقت)."""
+    global _CHECK_FILE
+    if _CHECK_FILE is None:
+        import os
+        import tempfile
+        _CHECK_FILE = os.path.join(tempfile.gettempdir(), "suits_check.svg").replace("\\", "/")
+        with open(_CHECK_FILE, "w", encoding="utf-8") as f:
+            f.write('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">'
+                    '<path d="M3.5 8.5l3 3 6-7" fill="none" stroke="white" stroke-width="2.2" '
+                    'stroke-linecap="round" stroke-linejoin="round"/></svg>')
+    return _CHECK_FILE
+
+
 def build_stylesheet(t: dict) -> str:
+    return _stylesheet(t).replace("__CHECK__", _check_icon())
+
+
+def _stylesheet(t: dict) -> str:
     s = SEMANTIC
     return f"""
 * {{ font-family: "Segoe UI", "Tahoma", "Arial"; font-size: 10pt; color: {t['text']}; }}
@@ -96,6 +117,11 @@ QLineEdit:read-only {{ background: {t['surface_alt']}; }}
 QComboBox QAbstractItemView {{ background: {t['surface']}; color: {t['text']};
     selection-background-color: {t['selection_bg']}; selection-color: {t['selection_text']}; }}
 QCheckBox, QRadioButton {{ spacing: 8px; }}
+QCheckBox::indicator {{ width: 16px; height: 16px; border: 1px solid {t['muted']}; border-radius: 4px;
+    background: {t['input_bg']}; }}
+QCheckBox::indicator:checked {{ background: {t['accent']}; border: 1px solid {t['accent']};
+    image: url(__CHECK__); }}
+QCheckBox::indicator:disabled {{ border-color: {t['border']}; }}
 QGroupBox {{ border: 1px solid {t['border']}; border-radius: 10px; margin-top: 14px; padding: 10px 8px 8px 8px;
     background: {t['surface']}; font-weight: bold; }}
 QGroupBox::title {{ subcontrol-origin: margin; subcontrol-position: top right; padding: 0 8px;

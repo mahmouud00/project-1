@@ -37,7 +37,7 @@ AMBER = SEMANTIC["amber"]
 PURPLE = SEMANTIC["purple"]
 BLUE = SEMANTIC["blue"]
 TEAL = SEMANTIC["teal"]
-NAVY = "#714b67"      # لون البراند (عناوين النوافذ)
+NAVY = "#a0558f"      # لون البراند (عناوين النوافذ) - بيبان على الفاتح والداكن
 GRAY = "#8a8494"      # للحاجات الموقوفة - بيبان على الفاتح والداكن
 
 
